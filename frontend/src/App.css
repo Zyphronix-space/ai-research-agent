@@ -233,8 +233,11 @@
   width: 32px;
   height: 32px;
   border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--bg);
+  border: 1px solid var(--glass-border);
+  /* Not var(--bg): this sits on the topbar's own glass panel, which is
+     already close to --bg in tone, so a flat --bg fill made the button
+     nearly invisible against it. */
+  background: var(--social-bg);
   color: var(--text-h);
   cursor: pointer;
   flex-shrink: 0;
