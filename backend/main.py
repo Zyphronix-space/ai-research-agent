@@ -36,6 +36,7 @@ app.add_middleware(
 class ChatRequest(BaseModel):
     question: str
     think_longer: bool = False
+    session_id: str = "anonymous"
 
 
 @app.get("/health")
@@ -50,8 +51,10 @@ async def chat(req: ChatRequest):
     if agent.client is None:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not configured on the server")
 
-    def event_stream():
-        for event in agent.run_agent(req.question, think_longer=req.think_longer):
+    async def event_stream():
+        async for event in agent.run_agent(
+            req.question, think_longer=req.think_longer, session_id=req.session_id
+        ):
             yield json.dumps(event) + "\n"
 
     return StreamingResponse(event_stream(), media_type="text/plain")
