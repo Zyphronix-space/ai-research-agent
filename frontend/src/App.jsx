@@ -87,13 +87,20 @@ function TraceSummary({ trace }) {
   )
 }
 
+const SESSION_KEY = 'ai-research-agent-session-id'
+
 function getSessionId() {
-  const KEY = 'ai-research-agent-session-id'
-  let id = localStorage.getItem(KEY)
+  let id = localStorage.getItem(SESSION_KEY)
   if (!id) {
     id = crypto.randomUUID()
-    localStorage.setItem(KEY, id)
+    localStorage.setItem(SESSION_KEY, id)
   }
+  return id
+}
+
+function newSessionId() {
+  const id = crypto.randomUUID()
+  localStorage.setItem(SESSION_KEY, id)
   return id
 }
 
@@ -103,16 +110,35 @@ function App() {
   const [sending, setSending] = useState(false)
   const [thinkLonger, setThinkLonger] = useState(false)
   const [error, setError] = useState(null)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const chatEndRef = useRef(null)
   const controllerRef = useRef(null)
+  const textareaRef = useRef(null)
   const sessionIdRef = useRef(getSessionId())
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, sending])
 
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`
+  }, [question])
+
   const stopGenerating = () => {
     controllerRef.current?.abort()
+  }
+
+  const startNewChat = () => {
+    controllerRef.current?.abort()
+    sessionIdRef.current = newSessionId()
+    setMessages([])
+    setQuestion('')
+    setError(null)
+    setSending(false)
+    setSidebarOpen(false)
   }
 
   const ask = async (asked) => {
@@ -248,102 +274,171 @@ function App() {
     ask(question)
   }
 
+  const handleComposerKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      ask(question)
+    }
+  }
+
   return (
-    <main className="page">
-      <header className="hero">
-        <h1>AI Research Agent</h1>
-        <p className="subtitle">
-          Ask it anything — it decides on its own whether to search the
-          web, run a calculation, or just answer. Every tool call it makes
-          shows up live below the answer, so you can see exactly how it
-          got there.
-        </p>
-      </header>
+    <div className="app-shell">
+      <button
+        type="button"
+        className="sidebar-scrim"
+        aria-label="Close menu"
+        data-open={sidebarOpen}
+        onClick={() => setSidebarOpen(false)}
+      />
 
-      <div className="chat" aria-live="polite">
-        {messages.length === 0 && (
-          <div className="empty-state">
-            <p>Try a question that needs a tool, or just say hi.</p>
-            <div className="suggestions">
-              {SUGGESTIONS.map((s) => (
-                <button key={s} className="suggestion-chip" onClick={() => ask(s)}>
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-        {messages.map((m, i) => (
-          <div key={i} className={`bubble-row ${m.role}`}>
-            <div className={`avatar ${m.role}`}>{m.role === 'user' ? 'Y' : 'AI'}</div>
-            <div className={`bubble ${m.role} ${m.isError ? 'is-error' : ''}`}>
-              {m.role === 'assistant' && <MemoryRecall recall={m.memoryRecall} />}
-              {m.steps && m.steps.length > 0 && (
-                <div className="steps">
-                  {m.steps.map((s, idx) => (
-                    <Step key={idx} step={s} />
-                  ))}
-                </div>
-              )}
-              {m.content ? (
-                m.role === 'assistant' ? (
-                  <ReactMarkdown>{m.content}</ReactMarkdown>
-                ) : (
-                  <p>{m.content}</p>
-                )
-              ) : (
-                (!m.steps || m.steps.length === 0) && (
-                  <span className="typing">
-                    <span />
-                    <span />
-                    <span />
-                  </span>
-                )
-              )}
-              {m.role === 'assistant' && !m.streaming && <TraceSummary trace={m.trace} />}
-            </div>
-          </div>
-        ))}
-        <div ref={chatEndRef} />
-      </div>
-
-      {error && <p className="error">{error}</p>}
-
-      <div className="composer-controls">
-        <button
-          type="button"
-          className={`think-toggle ${thinkLonger ? 'active' : ''}`}
-          onClick={() => setThinkLonger((v) => !v)}
-          aria-pressed={thinkLonger}
-          title="Spend more reasoning effort for a more thorough answer"
-        >
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M12 2a7 7 0 0 0-4 12.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3A7 7 0 0 0 12 2Z" />
-            <path d="M9 21h6" strokeLinecap="round" />
+      <aside className="sidebar" data-open={sidebarOpen}>
+        <button type="button" className="new-chat-btn" onClick={startNewChat}>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 5v14M5 12h14" strokeLinecap="round" />
           </svg>
-          Think longer
+          New chat
         </button>
-      </div>
+        <div className="sidebar-section-label">Try asking</div>
+        <div className="sidebar-suggestions">
+          {SUGGESTIONS.map((s) => (
+            <button
+              key={s}
+              className="sidebar-suggestion"
+              onClick={() => {
+                ask(s)
+                setSidebarOpen(false)
+              }}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+        <div className="sidebar-footer">
+          <p>Concurrent tool calls · execution trace · cross-session memory</p>
+        </div>
+      </aside>
 
-      <form onSubmit={handleAsk} className="ask-form">
-        <input
-          type="text"
-          placeholder="Ask anything…"
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          disabled={sending}
-        />
-        {sending ? (
-          <button type="button" className="stop-btn" onClick={stopGenerating}>
-            Stop
+      <main className="chat-column">
+        <header className="topbar">
+          <button
+            type="button"
+            className="menu-btn"
+            aria-label="Toggle menu"
+            onClick={() => setSidebarOpen((v) => !v)}
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" />
+            </svg>
           </button>
-        ) : (
-          <button type="submit" disabled={!question.trim()}>
-            Ask
-          </button>
-        )}
-      </form>
-    </main>
+          <span className="topbar-title">AI Research Agent</span>
+        </header>
+
+        <div className="chat" aria-live="polite">
+          {messages.length === 0 && (
+            <div className="empty-state">
+              <div className="empty-badge">AI</div>
+              <h1>What do you want to know?</h1>
+              <p>
+                Ask anything — it decides on its own whether to search the web,
+                run a calculation, or just answer, and shows every step live.
+              </p>
+              <div className="suggestions">
+                {SUGGESTIONS.map((s) => (
+                  <button key={s} className="suggestion-chip" onClick={() => ask(s)}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {messages.map((m, i) => (
+            <div key={i} className={`msg-row ${m.role}`}>
+              <div className="msg-inner">
+                <div className={`avatar ${m.role}`}>{m.role === 'user' ? 'Y' : 'AI'}</div>
+                <div className={`msg-body ${m.isError ? 'is-error' : ''}`}>
+                  {m.role === 'assistant' && <MemoryRecall recall={m.memoryRecall} />}
+                  {m.steps && m.steps.length > 0 && (
+                    <div className="steps">
+                      {m.steps.map((s, idx) => (
+                        <Step key={idx} step={s} />
+                      ))}
+                    </div>
+                  )}
+                  {m.content ? (
+                    m.role === 'assistant' ? (
+                      <ReactMarkdown>{m.content}</ReactMarkdown>
+                    ) : (
+                      <p>{m.content}</p>
+                    )
+                  ) : (
+                    (!m.steps || m.steps.length === 0) && (
+                      <span className="typing">
+                        <span />
+                        <span />
+                        <span />
+                      </span>
+                    )
+                  )}
+                  {m.role === 'assistant' && !m.streaming && <TraceSummary trace={m.trace} />}
+                </div>
+              </div>
+            </div>
+          ))}
+          <div ref={chatEndRef} />
+        </div>
+
+        <div className="composer-area">
+          {error && <p className="error">{error}</p>}
+          <form onSubmit={handleAsk} className="composer">
+            <div className="composer-toolbar">
+              <button
+                type="button"
+                className={`think-toggle ${thinkLonger ? 'active' : ''}`}
+                onClick={() => setThinkLonger((v) => !v)}
+                aria-pressed={thinkLonger}
+                title="Spend more reasoning effort for a more thorough answer"
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 2a7 7 0 0 0-4 12.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3A7 7 0 0 0 12 2Z" />
+                  <path d="M9 21h6" strokeLinecap="round" />
+                </svg>
+                Think longer
+              </button>
+            </div>
+            <div className="composer-input-row">
+              <textarea
+                ref={textareaRef}
+                placeholder="Ask anything…"
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                onKeyDown={handleComposerKeyDown}
+                disabled={sending}
+                rows={1}
+              />
+              {sending ? (
+                <button type="button" className="composer-btn stop-btn" onClick={stopGenerating} aria-label="Stop">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                    <rect x="6" y="6" width="12" height="12" rx="2" />
+                  </svg>
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  className="composer-btn send-btn"
+                  disabled={!question.trim()}
+                  aria-label="Send"
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.4">
+                    <path d="M12 19V5M5 12l7-7 7 7" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          </form>
+          <p className="composer-hint">Enter to send · Shift+Enter for a new line</p>
+        </div>
+      </main>
+    </div>
   )
 }
 
