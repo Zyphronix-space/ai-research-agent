@@ -17,12 +17,12 @@ project doesn't need yet.
 
 import json
 import math
-import os
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "memory.db")
+from db import DB_PATH
+
 EMBED_MODEL = "gemini-embedding-001"
 EMBED_DIM = 768
 MAX_ROWS_SCANNED = 500  # cap the linear scan; oldest exchanges age out of recall first
