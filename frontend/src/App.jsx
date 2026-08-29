@@ -27,10 +27,74 @@ function Step({ step }) {
         <span className={`step-dot ${ready ? 'done' : 'pending'}`} />
         <span className="step-tool">{step.tool}</span>
         {argsText && <span className="step-args">{argsText}</span>}
+        {step.latencyMs != null && <span className="step-latency">{step.latencyMs}ms</span>}
       </button>
       {open && ready && <pre className="step-result">{step.result}</pre>}
     </div>
   )
+}
+
+function MemoryRecall({ recall }) {
+  const [open, setOpen] = useState(false)
+  if (!recall || recall.count === 0) return null
+  return (
+    <div className="memory-recall">
+      <button className="memory-chip" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <span className="memory-icon">⟲</span>
+        Recalled {recall.count} related exchange{recall.count > 1 ? 's' : ''} from earlier sessions
+      </button>
+      {open && (
+        <div className="memory-items">
+          {recall.items.map((item, i) => (
+            <div key={i} className="memory-item">
+              <span className="memory-sim">{Math.round(item.similarity * 100)}% match</span>
+              <p className="memory-q">"{item.question}"</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TraceSummary({ trace }) {
+  const [open, setOpen] = useState(false)
+  if (!trace) return null
+  return (
+    <div className="trace-summary">
+      <button className="trace-chip" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <span className="trace-icon">◷</span>
+        {trace.llm_calls} LLM call{trace.llm_calls > 1 ? 's' : ''} · {trace.total_latency_ms}ms ·{' '}
+        {trace.tokens.total_tokens} tokens
+      </button>
+      {open && (
+        <dl className="trace-details">
+          <dt>Tool calls</dt>
+          <dd>{trace.steps}</dd>
+          <dt>LLM round-trips</dt>
+          <dd>{trace.llm_calls}</dd>
+          <dt>Total latency</dt>
+          <dd>{trace.total_latency_ms}ms</dd>
+          <dt>Prompt tokens</dt>
+          <dd>{trace.tokens.prompt_tokens}</dd>
+          <dt>Completion tokens</dt>
+          <dd>{trace.tokens.completion_tokens}</dd>
+          <dt>Total tokens</dt>
+          <dd>{trace.tokens.total_tokens}</dd>
+        </dl>
+      )}
+    </div>
+  )
+}
+
+function getSessionId() {
+  const KEY = 'ai-research-agent-session-id'
+  let id = localStorage.getItem(KEY)
+  if (!id) {
+    id = crypto.randomUUID()
+    localStorage.setItem(KEY, id)
+  }
+  return id
 }
 
 function App() {
@@ -41,6 +105,7 @@ function App() {
   const [error, setError] = useState(null)
   const chatEndRef = useRef(null)
   const controllerRef = useRef(null)
+  const sessionIdRef = useRef(getSessionId())
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -59,7 +124,10 @@ function App() {
     setSending(true)
 
     const assistantIndex = messages.length + 1
-    setMessages((prev) => [...prev, { role: 'assistant', content: '', steps: [], streaming: true }])
+    setMessages((prev) => [
+      ...prev,
+      { role: 'assistant', content: '', steps: [], memoryRecall: null, trace: null, streaming: true },
+    ])
 
     const controller = new AbortController()
     controllerRef.current = controller
@@ -70,7 +138,11 @@ function App() {
       const res = await fetch(`${API_URL}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: asked, think_longer: thinkLonger }),
+        body: JSON.stringify({
+          question: asked,
+          think_longer: thinkLonger,
+          session_id: sessionIdRef.current,
+        }),
         signal: controller.signal,
       })
       clearTimeout(timeout)
@@ -86,15 +158,24 @@ function App() {
       const steps = []
       let content = ''
       let isError = false
+      let memoryRecall = null
+      let trace = null
 
       const applyEvent = (event) => {
-        if (event.type === 'tool_call') {
-          steps.push({ tool: event.tool, args: event.args, result: null })
+        if (event.type === 'memory_recall') {
+          memoryRecall = { count: event.count, items: event.items }
+        } else if (event.type === 'tool_call') {
+          steps.push({ tool: event.tool, args: event.args, result: null, latencyMs: null })
         } else if (event.type === 'tool_result') {
           const step = [...steps].reverse().find((s) => s.tool === event.tool && s.result == null)
-          if (step) step.result = event.result
+          if (step) {
+            step.result = event.result
+            step.latencyMs = event.latency_ms ?? null
+          }
         } else if (event.type === 'answer') {
           content = event.text
+        } else if (event.type === 'trace_summary') {
+          trace = event
         } else if (event.type === 'error') {
           content = event.message
           isError = true
@@ -120,7 +201,15 @@ function App() {
 
         setMessages((prev) => {
           const next = [...prev]
-          next[assistantIndex] = { role: 'assistant', content, steps: [...steps], streaming: true, isError }
+          next[assistantIndex] = {
+            role: 'assistant',
+            content,
+            steps: [...steps],
+            memoryRecall,
+            trace,
+            streaming: true,
+            isError,
+          }
           return next
         })
       }
@@ -188,6 +277,7 @@ function App() {
           <div key={i} className={`bubble-row ${m.role}`}>
             <div className={`avatar ${m.role}`}>{m.role === 'user' ? 'Y' : 'AI'}</div>
             <div className={`bubble ${m.role} ${m.isError ? 'is-error' : ''}`}>
+              {m.role === 'assistant' && <MemoryRecall recall={m.memoryRecall} />}
               {m.steps && m.steps.length > 0 && (
                 <div className="steps">
                   {m.steps.map((s, idx) => (
@@ -210,6 +300,7 @@ function App() {
                   </span>
                 )
               )}
+              {m.role === 'assistant' && !m.streaming && <TraceSummary trace={m.trace} />}
             </div>
           </div>
         ))}
