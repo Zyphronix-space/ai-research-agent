@@ -140,10 +140,16 @@ async def chat(req: ChatRequest, authorization: str | None = Header(default=None
         ):
             if event["type"] == "tool_call":
                 steps.append(
-                    {"tool": event["tool"], "args": event["args"], "result": None, "latencyMs": None}
+                    {"id": event.get("id"), "tool": event["tool"], "args": event["args"], "result": None, "latencyMs": None}
                 )
             elif event["type"] == "tool_result":
-                step = next((s for s in reversed(steps) if s["tool"] == event["tool"] and s["result"] is None), None)
+                # Match by call id when available — falls back to name+order only
+                # for an id-less call, since the same tool can appear more than
+                # once in a turn and matching by name alone would pick the wrong one.
+                if event.get("id") is not None:
+                    step = next((s for s in steps if s["id"] == event["id"]), None)
+                else:
+                    step = next((s for s in steps if s["tool"] == event["tool"] and s["result"] is None), None)
                 if step:
                     step["result"] = event["result"]
                     step["latencyMs"] = event.get("latency_ms")

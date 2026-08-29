@@ -18,6 +18,11 @@
   --blob-a: rgba(170, 59, 255, 0.22);
   --blob-b: rgba(59, 140, 255, 0.18);
   --blob-c: rgba(255, 120, 190, 0.16);
+  /* Near-opaque variant for modals over live chat content — the sidebar/topbar
+     stay translucent since there's nothing distracting behind them, but the
+     settings panel sits directly over chat text that needs to stay unreadable
+     even where backdrop-filter support is weak. */
+  --modal-bg: rgba(255, 255, 255, 0.92);
 
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
@@ -58,6 +63,7 @@
     --blob-a: rgba(192, 132, 252, 0.28);
     --blob-b: rgba(80, 130, 255, 0.22);
     --blob-c: rgba(255, 120, 190, 0.16);
+    --modal-bg: rgba(22, 23, 29, 0.94);
   }
 }
 
@@ -80,6 +86,7 @@
   --blob-a: rgba(192, 132, 252, 0.28);
   --blob-b: rgba(80, 130, 255, 0.22);
   --blob-c: rgba(255, 120, 190, 0.16);
+  --modal-bg: rgba(22, 23, 29, 0.94);
 }
 
 body {

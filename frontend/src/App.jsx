@@ -489,18 +489,26 @@ function App() {
     controllerRef.current?.abort()
   }
 
+  // On mobile the sidebar is a full-screen overlay drawer, so it should
+  // auto-dismiss once you've picked something from it. On desktop it's a
+  // permanent docked column — auto-closing it there would make the whole
+  // nav rail vanish every time you switch chats.
+  const closeSidebarOnMobile = () => {
+    if (window.innerWidth <= 880) setSidebarOpen(false)
+  }
+
   const startNewChat = () => {
     controllerRef.current?.abort()
     setActiveId(crypto.randomUUID())
     setQuestion('')
     setError(null)
     setSending(false)
-    setSidebarOpen(false)
+    closeSidebarOnMobile()
   }
 
   const selectConversation = async (id) => {
     if (id === activeId) {
-      setSidebarOpen(false)
+      closeSidebarOnMobile()
       return
     }
     controllerRef.current?.abort()
@@ -526,7 +534,7 @@ function App() {
     setQuestion('')
     setError(null)
     setSending(false)
-    setSidebarOpen(false)
+    closeSidebarOnMobile()
   }
 
   const deleteConversation = (id, e) => {
@@ -606,9 +614,15 @@ function App() {
         if (event.type === 'memory_recall') {
           memoryRecall = { count: event.count, items: event.items }
         } else if (event.type === 'tool_call') {
-          steps.push({ tool: event.tool, args: event.args, result: null, latencyMs: null })
+          steps.push({ id: event.id ?? null, tool: event.tool, args: event.args, result: null, latencyMs: null })
         } else if (event.type === 'tool_result') {
-          const step = [...steps].reverse().find((s) => s.tool === event.tool && s.result == null)
+          // Match by call id when available — the same tool can be called more
+          // than once in a single turn, so matching by name alone (with no id)
+          // can pair a result with the wrong step.
+          const step =
+            event.id != null
+              ? steps.find((s) => s.id === event.id)
+              : steps.find((s) => s.tool === event.tool && s.result == null)
           if (step) {
             step.result = event.result
             step.latencyMs = event.latency_ms ?? null
@@ -708,6 +722,16 @@ function App() {
       />
 
       <aside className="sidebar" data-open={sidebarOpen}>
+        <div className="topbar-brand">
+          <div className="topbar-logo">
+            <AssistantIcon />
+          </div>
+          <div className="topbar-titles">
+            <span className="topbar-title">AI Research Agent</span>
+            <span className="topbar-subtitle">Gemini · tools · memory</span>
+          </div>
+        </div>
+
         <button type="button" className="new-chat-btn" onClick={startNewChat}>
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M12 5v14M5 12h14" strokeLinecap="round" />
@@ -771,15 +795,6 @@ function App() {
               <path d="M9 4v16" />
             </svg>
           </button>
-          <div className="topbar-brand">
-            <div className="topbar-logo">
-              <AssistantIcon />
-            </div>
-            <div className="topbar-titles">
-              <span className="topbar-title">AI Research Agent</span>
-              <span className="topbar-subtitle">Gemini · tools · memory</span>
-            </div>
-          </div>
         </header>
 
         <div className="chat" aria-live="polite">

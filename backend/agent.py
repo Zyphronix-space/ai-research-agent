@@ -187,16 +187,20 @@ async def run_agent(question: str, think_longer: bool = False, session_id: str =
             return
 
         # Multiple tool calls in the same turn run concurrently, not one at a time.
+        # fc.id correlates a result back to its call — required here since the
+        # same tool (e.g. two calculator calls) can appear more than once in a
+        # single turn, so matching by tool name alone would pair results with
+        # the wrong call.
         for fc in function_calls:
             args = dict(fc.args) if fc.args else {}
-            yield {"type": "tool_call", "tool": fc.name, "args": args}
+            yield {"type": "tool_call", "id": fc.id, "tool": fc.name, "args": args}
 
         tool_calls_made += len(function_calls)
         results = await asyncio.gather(*(_run_tool_call(fc) for fc in function_calls))
 
         response_parts = []
         for fc, (name, args, result, latency_ms) in zip(function_calls, results):
-            yield {"type": "tool_result", "tool": name, "result": result, "latency_ms": round(latency_ms)}
+            yield {"type": "tool_result", "id": fc.id, "tool": name, "result": result, "latency_ms": round(latency_ms)}
             response_parts.append(
                 types.Part(
                     function_response=types.FunctionResponse(id=fc.id, name=fc.name, response={"result": result})
