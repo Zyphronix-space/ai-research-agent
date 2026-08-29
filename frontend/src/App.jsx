@@ -5,12 +5,38 @@ import './App.css'
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8001'
 const REQUEST_TIMEOUT_MS = 45000
 const THINK_LONGER_TIMEOUT_MS = 75000
+const CONVERSATIONS_KEY = 'ai-research-agent-conversations'
 
 const SUGGESTIONS = [
   'What is (4821 * 37) - 156?',
   'Search for the latest Claude model from Anthropic',
   'hi',
 ]
+
+function AssistantIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
+      <path d="M12 2 9.5 8.5 3 11l6.5 2.5L12 20l2.5-6.5L21 11l-6.5-2.5Z" />
+    </svg>
+  )
+}
+
+function UserIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8" />
+    </svg>
+  )
+}
+
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
 
 function Step({ step }) {
   const [open, setOpen] = useState(false)
@@ -87,25 +113,37 @@ function TraceSummary({ trace }) {
   )
 }
 
-const SESSION_KEY = 'ai-research-agent-session-id'
-
-function getSessionId() {
-  let id = localStorage.getItem(SESSION_KEY)
-  if (!id) {
-    id = crypto.randomUUID()
-    localStorage.setItem(SESSION_KEY, id)
+function loadConversations() {
+  try {
+    const raw = localStorage.getItem(CONVERSATIONS_KEY)
+    const parsed = raw ? JSON.parse(raw) : []
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
   }
-  return id
 }
 
-function newSessionId() {
-  const id = crypto.randomUUID()
-  localStorage.setItem(SESSION_KEY, id)
-  return id
+function deriveTitle(messages) {
+  const firstUser = messages.find((m) => m.role === 'user')
+  if (!firstUser) return 'New chat'
+  const text = firstUser.content.trim().replace(/\s+/g, ' ')
+  return text.length > 44 ? `${text.slice(0, 44)}…` : text
+}
+
+function formatWhen(ts) {
+  const diffMs = Date.now() - ts
+  const mins = Math.floor(diffMs / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return days === 1 ? 'yesterday' : `${days}d ago`
 }
 
 function App() {
-  const [messages, setMessages] = useState([])
+  const [conversations, setConversations] = useState(loadConversations)
+  const [activeId, setActiveId] = useState(() => crypto.randomUUID())
   const [question, setQuestion] = useState('')
   const [sending, setSending] = useState(false)
   const [thinkLonger, setThinkLonger] = useState(false)
@@ -114,7 +152,13 @@ function App() {
   const chatEndRef = useRef(null)
   const controllerRef = useRef(null)
   const textareaRef = useRef(null)
-  const sessionIdRef = useRef(getSessionId())
+
+  const activeConversation = conversations.find((c) => c.id === activeId)
+  const messages = activeConversation ? activeConversation.messages : []
+
+  useEffect(() => {
+    localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(conversations))
+  }, [conversations])
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -127,30 +171,73 @@ function App() {
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`
   }, [question])
 
+  const applyMessages = (updater) => {
+    setConversations((prev) => {
+      const idx = prev.findIndex((c) => c.id === activeId)
+      if (idx === -1) {
+        const newMessages = updater([])
+        return [
+          { id: activeId, title: deriveTitle(newMessages), messages: newMessages, updatedAt: Date.now() },
+          ...prev,
+        ]
+      }
+      const next = [...prev]
+      const updatedMessages = updater(next[idx].messages)
+      next[idx] = {
+        ...next[idx],
+        messages: updatedMessages,
+        updatedAt: Date.now(),
+        title: next[idx].title === 'New chat' || !next[idx].title ? deriveTitle(updatedMessages) : next[idx].title,
+      }
+      return next
+    })
+  }
+
   const stopGenerating = () => {
     controllerRef.current?.abort()
   }
 
   const startNewChat = () => {
     controllerRef.current?.abort()
-    sessionIdRef.current = newSessionId()
-    setMessages([])
+    setActiveId(crypto.randomUUID())
     setQuestion('')
     setError(null)
     setSending(false)
     setSidebarOpen(false)
   }
 
+  const selectConversation = (id) => {
+    if (id === activeId) {
+      setSidebarOpen(false)
+      return
+    }
+    controllerRef.current?.abort()
+    setActiveId(id)
+    setQuestion('')
+    setError(null)
+    setSending(false)
+    setSidebarOpen(false)
+  }
+
+  const deleteConversation = (id, e) => {
+    e.stopPropagation()
+    setConversations((prev) => prev.filter((c) => c.id !== id))
+    if (id === activeId) {
+      setActiveId(crypto.randomUUID())
+    }
+  }
+
   const ask = async (asked) => {
     if (!asked.trim() || sending) return
 
-    setMessages((prev) => [...prev, { role: 'user', content: asked }])
+    const conversationId = activeId
+    applyMessages((prev) => [...prev, { role: 'user', content: asked }])
     setQuestion('')
     setError(null)
     setSending(true)
 
     const assistantIndex = messages.length + 1
-    setMessages((prev) => [
+    applyMessages((prev) => [
       ...prev,
       { role: 'assistant', content: '', steps: [], memoryRecall: null, trace: null, streaming: true },
     ])
@@ -160,15 +247,24 @@ function App() {
     const timeoutMs = thinkLonger ? THINK_LONGER_TIMEOUT_MS : REQUEST_TIMEOUT_MS
     const timeout = setTimeout(() => controller.abort(), timeoutMs)
 
+    const patchAssistant = (patch) => {
+      setConversations((prev) => {
+        const idx = prev.findIndex((c) => c.id === conversationId)
+        if (idx === -1) return prev
+        const msgs = [...prev[idx].messages]
+        if (!msgs[assistantIndex]) return prev
+        msgs[assistantIndex] = { ...msgs[assistantIndex], ...patch }
+        const next = [...prev]
+        next[idx] = { ...next[idx], messages: msgs, updatedAt: Date.now() }
+        return next
+      })
+    }
+
     try {
       const res = await fetch(`${API_URL}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question: asked,
-          think_longer: thinkLonger,
-          session_id: sessionIdRef.current,
-        }),
+        body: JSON.stringify({ question: asked, think_longer: thinkLonger, session_id: conversationId }),
         signal: controller.signal,
       })
       clearTimeout(timeout)
@@ -225,42 +321,35 @@ function App() {
           }
         }
 
-        setMessages((prev) => {
-          const next = [...prev]
-          next[assistantIndex] = {
-            role: 'assistant',
-            content,
-            steps: [...steps],
-            memoryRecall,
-            trace,
-            streaming: true,
-            isError,
-          }
-          return next
-        })
+        patchAssistant({ content, steps: [...steps], memoryRecall, trace, streaming: true, isError })
       }
 
-      setMessages((prev) => {
-        const next = [...prev]
-        next[assistantIndex] = { ...next[assistantIndex], streaming: false }
-        return next
-      })
+      patchAssistant({ streaming: false })
     } catch (err) {
       clearTimeout(timeout)
       if (err.name === 'AbortError') {
-        setMessages((prev) => {
-          const next = [...prev]
-          if (next[assistantIndex]) {
-            next[assistantIndex] = {
-              ...next[assistantIndex],
-              content: next[assistantIndex].content || '_Stopped._',
-              streaming: false,
-            }
+        patchAssistant({ streaming: false })
+        setConversations((prev) => {
+          const idx = prev.findIndex((c) => c.id === conversationId)
+          if (idx === -1) return prev
+          const msgs = [...prev[idx].messages]
+          const current = msgs[assistantIndex]
+          if (current && !current.content) {
+            msgs[assistantIndex] = { ...current, content: '_Stopped._' }
+            const next = [...prev]
+            next[idx] = { ...next[idx], messages: msgs }
+            return next
           }
-          return next
+          return prev
         })
       } else {
-        setMessages((prev) => prev.slice(0, assistantIndex))
+        setConversations((prev) => {
+          const idx = prev.findIndex((c) => c.id === conversationId)
+          if (idx === -1) return prev
+          const next = [...prev]
+          next[idx] = { ...next[idx], messages: next[idx].messages.slice(0, assistantIndex) }
+          return next
+        })
         setError(`Could not get an answer: ${err.message}`)
       }
     } finally {
@@ -281,6 +370,8 @@ function App() {
     }
   }
 
+  const sortedConversations = [...conversations].sort((a, b) => b.updatedAt - a.updatedAt)
+
   return (
     <div className="app-shell">
       <button
@@ -298,23 +389,25 @@ function App() {
           </svg>
           New chat
         </button>
-        <div className="sidebar-section-label">Try asking</div>
-        <div className="sidebar-suggestions">
-          {SUGGESTIONS.map((s) => (
-            <button
-              key={s}
-              className="sidebar-suggestion"
-              onClick={() => {
-                ask(s)
-                setSidebarOpen(false)
-              }}
-            >
-              {s}
-            </button>
+
+        <div className="sidebar-section-label">Chats</div>
+        <div className="history-list">
+          {sortedConversations.length === 0 && <p className="history-empty">No chats yet</p>}
+          {sortedConversations.map((c) => (
+            <div key={c.id} className={`history-item ${c.id === activeId ? 'active' : ''}`}>
+              <button className="history-item-btn" onClick={() => selectConversation(c.id)}>
+                <span className="history-title">{c.title}</span>
+                <span className="history-when">{formatWhen(c.updatedAt)}</span>
+              </button>
+              <button
+                className="history-delete-btn"
+                aria-label={`Delete "${c.title}"`}
+                onClick={(e) => deleteConversation(c.id, e)}
+              >
+                <TrashIcon />
+              </button>
+            </div>
           ))}
-        </div>
-        <div className="sidebar-footer">
-          <p>Concurrent tool calls · execution trace · cross-session memory</p>
         </div>
       </aside>
 
@@ -330,13 +423,18 @@ function App() {
               <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" />
             </svg>
           </button>
-          <span className="topbar-title">AI Research Agent</span>
+          <div className="topbar-titles">
+            <span className="topbar-title">AI Research Agent</span>
+            <span className="topbar-subtitle">Gemini · tools · memory</span>
+          </div>
         </header>
 
         <div className="chat" aria-live="polite">
           {messages.length === 0 && (
             <div className="empty-state">
-              <div className="empty-badge">AI</div>
+              <div className="empty-badge">
+                <AssistantIcon />
+              </div>
               <h1>What do you want to know?</h1>
               <p>
                 Ask anything — it decides on its own whether to search the web,
@@ -354,7 +452,7 @@ function App() {
           {messages.map((m, i) => (
             <div key={i} className={`msg-row ${m.role}`}>
               <div className="msg-inner">
-                <div className={`avatar ${m.role}`}>{m.role === 'user' ? 'Y' : 'AI'}</div>
+                <div className={`avatar ${m.role}`}>{m.role === 'user' ? <UserIcon /> : <AssistantIcon />}</div>
                 <div className={`msg-body ${m.isError ? 'is-error' : ''}`}>
                   {m.role === 'assistant' && <MemoryRecall recall={m.memoryRecall} />}
                   {m.steps && m.steps.length > 0 && (

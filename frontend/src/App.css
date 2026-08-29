@@ -57,7 +57,7 @@
 }
 
 .sidebar-section-label {
-  margin: 18px 4px 2px;
+  margin: 18px 4px 4px;
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -66,43 +66,88 @@
   opacity: 0.55;
 }
 
-.sidebar-suggestions {
+.history-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
+  overflow-y: auto;
+  flex: 1;
 }
 
-.sidebar-suggestion {
+.history-empty {
   padding: 8px 10px;
+  font-size: 0.8rem;
+  color: var(--text);
+  opacity: 0.5;
+}
+
+.history-item {
+  position: relative;
+  display: flex;
+  align-items: center;
   border-radius: 8px;
+}
+
+.history-item:hover,
+.history-item.active {
+  background: var(--accent-bg);
+}
+
+.history-item-btn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 8px 10px;
   border: none;
   background: transparent;
   color: var(--text);
-  font-size: 0.82rem;
   text-align: left;
   cursor: pointer;
+  border-radius: 8px;
+}
+
+.history-item.active .history-item-btn {
+  color: var(--text-h);
+}
+
+.history-title {
+  width: 100%;
+  font-size: 0.82rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.sidebar-suggestion:hover {
-  background: var(--accent-bg);
-  color: var(--text-h);
+.history-when {
+  font-size: 0.66rem;
+  opacity: 0.55;
 }
 
-.sidebar-footer {
-  margin-top: auto;
-  padding: 10px 8px 4px;
-  border-top: 1px solid var(--border);
-}
-
-.sidebar-footer p {
-  font-size: 0.7rem;
-  line-height: 1.5;
+.history-delete-btn {
+  flex-shrink: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-right: 4px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
   color: var(--text);
-  opacity: 0.6;
-  margin: 10px 0 0;
+  cursor: pointer;
+}
+
+.history-item:hover .history-delete-btn {
+  display: flex;
+}
+
+.history-delete-btn:hover {
+  background: var(--accent-border);
+  color: var(--text-h);
 }
 
 /* Main chat column */
@@ -138,11 +183,24 @@
   flex-shrink: 0;
 }
 
+.topbar-titles {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
 .topbar-title {
   font-size: 0.92rem;
   font-weight: 700;
   color: var(--text-h);
   letter-spacing: -0.1px;
+}
+
+.topbar-subtitle {
+  font-size: 0.68rem;
+  color: var(--text);
+  opacity: 0.55;
+  font-family: var(--mono);
 }
 
 .chat {
@@ -164,16 +222,15 @@
 }
 
 .empty-badge {
-  width: 44px;
-  height: 44px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
   background: var(--accent);
   color: white;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.8rem;
-  font-weight: 700;
+  box-shadow: 0 0 0 8px var(--accent-bg);
 }
 
 .empty-state h1 {
@@ -214,6 +271,24 @@
 /* Message rows */
 .msg-row {
   padding: 18px 16px;
+  animation: msg-in 0.2s ease both;
+}
+
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .msg-row {
+    animation: none;
+  }
 }
 
 .msg-row.assistant {
