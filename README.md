@@ -5,6 +5,10 @@ calculation, or just answer — and the app shows every tool call live as
 it happens, not just the final answer. This is agentic tool-calling, not
 a single "call the LLM once" wrapper.
 
+**Live:** [delightful-desert-0af6ccc00.7.azurestaticapps.net](https://delightful-desert-0af6ccc00.7.azurestaticapps.net)
+(frontend on Azure Static Web Apps, backend on Azure App Service — see
+[Deployment](#deployment)).
+
 Three things separate this from a basic tool-calling demo:
 
 1. **Concurrent tool execution** — when the model asks for more than one
@@ -24,7 +28,7 @@ Three things separate this from a basic tool-calling demo:
 The frontend keeps a `session_id` (a UUID in `localStorage`) and sends it
 with every request. Each `POST /chat` then runs `agent.run_agent()`:
 
-1. Embed the question and search `memory.db` for similar past exchanges
+1. Embed the question and search `app.db` for similar past exchanges
    from *any* session → emit `memory_recall` if anything scored above the
    similarity threshold.
 2. Call Gemini with the tool declarations, accumulating token usage from
@@ -34,7 +38,7 @@ with every request. Each `POST /chat` then runs `agent.run_agent()`:
    since the tool functions themselves are blocking I/O), timing each one.
 4. Repeat 2-3 until Gemini returns a final answer instead of another tool
    call (capped at 6 steps).
-5. Embed and store this exchange in `memory.db` for future recall.
+5. Embed and store this exchange in `app.db` for future recall.
 6. Emit `trace_summary` — total steps, LLM round-trips, latency, tokens.
 
 - **`backend/`** — FastAPI service.
@@ -59,13 +63,19 @@ with every request. Each `POST /chat` then runs `agent.run_agent()`:
     wait.
   - A "Think longer" flag raises Gemini's thinking budget for harder
     questions, same as the RAG project.
-- **`frontend/`** — React (Vite) chat UI. Each assistant message shows: a
-  "Recalled N related exchanges" chip when memory found something relevant
-  (expand to see which), its tool calls as small chips with a per-call
-  latency badge (click one to expand the raw result), and an execution
-  trace chip (LLM round-trips, total latency, tokens — expand for the
-  full breakdown). Markdown-rendered answers, streaming, a stop button,
-  suggested starter prompts.
+- **`frontend/`** — React (Vite), a ChatGPT/Gemini-style shell (collapsible
+  sidebar, date-grouped chat history, floating composer) over a
+  liquid-glass visual treatment (translucent panels over blurred colour
+  blobs, light/dark tokens for both themes). Each assistant message
+  shows: a "Recalled N related exchanges" chip when memory found
+  something relevant (expand to see which), its tool calls as small
+  chips with a per-call latency badge (click one to expand the raw
+  result), and an execution trace chip (LLM round-trips, total latency,
+  tokens — expand for the full breakdown). A settings panel (gear icon)
+  covers theme (System/Light/Dark), a Google Sign-In button, and clearing
+  local history. Chat history is stored client-side in `localStorage` by
+  default; signing in with Google upgrades it to server-persisted,
+  cross-device history (see `db.py`/`auth.py`).
 
 ## Running it
 
@@ -84,8 +94,41 @@ npm install
 npm run dev
 ```
 
-`memory.db` is created automatically on first run (SQLite, gitignored —
-it's runtime state, not source).
+`app.db` is created automatically on first run (SQLite, gitignored — it's
+runtime state, not source; holds the semantic-memory table plus, for
+signed-in users, conversation history).
+
+## Deployment
+
+- **Frontend** — Azure Static Web Apps (Free tier). Built with Vite
+  (`VITE_API_URL` pointed at the backend below) and pushed with the
+  Static Web Apps CLI: `npx @azure/static-web-apps-cli deploy ./dist
+  --deployment-token <token> --env production`.
+- **Backend** — Azure App Service (Linux, B1, Python 3.12), deployed via
+  `az webapp up` (Oryx builds it server-side from `requirements.txt` — no
+  Docker needed for this path, unlike the Container Apps route below).
+  Startup command is explicit (`uvicorn main:app --host 0.0.0.0 --port
+  8000`) since Oryx's auto-detection doesn't know this is a FastAPI app.
+  `GEMINI_API_KEY`/`GEMINI_MODEL` are set as App Service settings, not
+  baked into the deployed files.
+- **Why App Service instead of Container Apps** (which the Dockerfile/CI
+  in this repo target) — this subscription is an Azure for Students
+  grant, and Azure Container Registry's remote build (`ACR Tasks`, what
+  `az containerapp up --source` uses) is disabled on that tier. App
+  Service's Oryx build doesn't need it. The Dockerfile/`docker-compose.yml`
+  still work for local Docker use; they're just not this deployment's path.
+- **Region constraints** — this subscription is further restricted to a
+  specific region allowlist (`centralindia`, `eastasia`,
+  `koreacentral`, `malaysiawest`, `austriaeast`). Static Web Apps'
+  supported regions only overlap that list at `eastasia`, so frontend and
+  backend intentionally sit in different regions here.
+- **SQLite persistence caveat** — `app.db` lives at `AI_AGENT_DB_DIR`
+  (set to `/home/data` in production), which is Azure App Service's
+  persistent storage mount, so it survives restarts/redeploys. It would
+  **not** survive them at the default path (next to the source files),
+  since Oryx extracts the app fresh into an ephemeral directory on every
+  deploy — worth knowing if you fork this and see history vanish after a
+  redeploy with `AI_AGENT_DB_DIR` unset.
 
 ## Example request
 

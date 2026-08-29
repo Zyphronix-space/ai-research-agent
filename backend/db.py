@@ -15,7 +15,15 @@ import sqlite3
 import uuid
 from contextlib import contextmanager
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "app.db")
+# Defaults to a file next to this module (fine for local dev and any host
+# whose filesystem persists across restarts). On platforms where the app's
+# own code directory is rebuilt on every deploy/restart — e.g. Azure App
+# Service on Linux extracts the app to an ephemeral /tmp path — set
+# AI_AGENT_DB_DIR to a persistent, writable directory (Azure App Service
+# mounts /home persistently) so the database survives restarts.
+_DB_DIR = os.environ.get("AI_AGENT_DB_DIR", os.path.dirname(__file__))
+os.makedirs(_DB_DIR, exist_ok=True)
+DB_PATH = os.path.join(_DB_DIR, "app.db")
 
 
 @contextmanager

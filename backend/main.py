@@ -34,8 +34,12 @@ app = FastAPI(title="AI Research Agent API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174"],
-    allow_origin_regex=r"https://frontend.*\.vercel\.app",
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "https://delightful-desert-0af6ccc00.7.azurestaticapps.net",
+    ],
+    allow_origin_regex=r"https://frontend.*\.vercel\.app|https://.*\.azurestaticapps\.net",
     allow_methods=["*"],
     allow_headers=["*"],
 )
