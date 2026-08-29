@@ -7,12 +7,6 @@ const REQUEST_TIMEOUT_MS = 45000
 const THINK_LONGER_TIMEOUT_MS = 75000
 const CONVERSATIONS_KEY = 'ai-research-agent-conversations'
 
-const SUGGESTIONS = [
-  'What is (4821 * 37) - 156?',
-  'Search for the latest Claude model from Anthropic',
-  'hi',
-]
-
 function AssistantIcon() {
   return (
     <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
@@ -440,13 +434,6 @@ function App() {
                 Ask anything — it decides on its own whether to search the web,
                 run a calculation, or just answer, and shows every step live.
               </p>
-              <div className="suggestions">
-                {SUGGESTIONS.map((s) => (
-                  <button key={s} className="suggestion-chip" onClick={() => ask(s)}>
-                    {s}
-                  </button>
-                ))}
-              </div>
             </div>
           )}
           {messages.map((m, i) => (

@@ -245,29 +245,6 @@
   font-size: 0.92rem;
 }
 
-.suggestions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 4px;
-}
-
-.suggestion-chip {
-  padding: 6px 14px;
-  border-radius: 999px;
-  border: 1px solid var(--accent-border);
-  background: var(--accent-bg);
-  color: var(--text-h);
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.suggestion-chip:hover {
-  background: var(--accent-border);
-}
-
 /* Message rows */
 .msg-row {
   padding: 18px 16px;
