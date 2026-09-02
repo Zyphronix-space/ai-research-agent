@@ -1,81 +1,111 @@
-# AI Research Agent
+# AI Research Crew
 
-Ask it anything. It decides on its own whether to search the web, run a
-calculation, or just answer — and the app shows every tool call live as
-it happens, not just the final answer. This is agentic tool-calling, not
+Ask it a research question. A **Planner** breaks it into sub-questions, a set of
+**Worker** agents research them *concurrently* (real web search + page fetches,
+not scripted), a **Reviewer** checks the findings for gaps and contradictions
+and can send workers back for another round, and a **Synthesizer** writes the
+final, cited answer. Every step streams to the UI live as it happens — this is
+genuine multi-agent orchestration with planning, tool use, and reflection, not
 a single "call the LLM once" wrapper.
 
-**Live:** [delightful-desert-0af6ccc00.7.azurestaticapps.net](https://delightful-desert-0af6ccc00.7.azurestaticapps.net)
-(frontend on Azure Static Web Apps, backend on Azure App Service — see
-[Deployment](#deployment)).
+> This project started as a single-agent tool-calling chatbot (see git
+> history) and was rebuilt into this multi-agent pipeline. The Azure/Vercel
+> deployment described under [Deployment](#deployment) currently still serves
+> the older single-agent version — redeploying this version is a follow-up
+> step, not something this session did (see
+> [Known limitations](#known-limitations)).
 
-Three things separate this from a basic tool-calling demo:
+Three things separate this from a basic multi-agent demo:
 
-1. **Concurrent tool execution** — when the model asks for more than one
-   tool in the same turn, they run at the same time (`asyncio.gather` over
-   a thread pool), not one after another.
-2. **A real execution trace** — every step is timed and every Gemini call's
-   token usage is accumulated, so the UI can show per-tool latency and a
-   per-turn token/latency summary instead of just the final text.
-3. **Cross-session semantic memory** — finished exchanges are embedded
-   (Gemini's `gemini-embedding-001`) and stored in SQLite. A new question,
-   in any session, is embedded the same way and matched against that store
-   by cosine similarity, so the agent can recall a related exchange from a
-   completely different browser session.
+1. **Real concurrent workers, real fan-in.** Workers don't just run in
+   parallel — their live progress (`tool_call`/`tool_result`/`worker_done`)
+   is merged into one ordered event stream via an `asyncio.Queue`, so the UI
+   shows worker 2 finishing before worker 1 the moment it actually happens,
+   not after everything completes.
+2. **Structured output everywhere, not regex-parsed free text.** The
+   Planner's plan, each Worker's finding, the Reviewer's verdict, and the
+   Synthesizer's answer are all Pydantic models passed to Gemini as
+   `response_schema` — the JSON shape in the examples below is literally what
+   the model returns, validated on the way in.
+3. **A bounded reflection loop.** The Reviewer can send workers back for
+   another research round on specific gaps it names — capped at
+   `MAX_REVIEW_ITERATIONS = 2` extra rounds so a stubborn reviewer can't loop
+   the pipeline forever.
 
 ## Architecture
 
-The frontend keeps a `session_id` (a UUID in `localStorage`) and sends it
-with every request. Each `POST /chat` then runs `agent.run_agent()`:
+```
+POST /research/run  (question)
+  │
+  ▼
+PLANNER            — structured plan: 2-5 independent sub-questions
+  │
+  ▼
+WORKERS (parallel)  — each: tool-calling loop (web_search, fetch_url) → structured finding
+  │
+  ▼
+EVIDENCE POOL       — findings merged as they complete
+  │
+  ▼
+REVIEWER            — structured review: approved? gaps? contradictions? unsupported claims?
+  │
+  ├── needs more research (bounded) ──► WORKERS on the flagged gaps only ──┐
+  │                                                                        │
+  │◄───────────────────────────────────────────────────────────────────────┘
+  ▼ approved (or cap reached)
+SYNTHESIZER         — final markdown answer + key findings + citations
+  │
+  ▼
+trace_summary       — every agent's duration, sources found, review round count
+```
 
-1. Embed the question and search `app.db` for similar past exchanges
-   from *any* session → emit `memory_recall` if anything scored above the
-   similarity threshold.
-2. Call Gemini with the tool declarations, accumulating token usage from
-   `response.usage_metadata` on every call.
-3. If the model requested more than one tool call this turn, dispatch all
-   of them at once with `asyncio.gather` (each wrapped in `asyncio.to_thread`
-   since the tool functions themselves are blocking I/O), timing each one.
-4. Repeat 2-3 until Gemini returns a final answer instead of another tool
-   call (capped at 6 steps).
-5. Embed and store this exchange in `app.db` for future recall.
-6. Emit `trace_summary` — total steps, LLM round-trips, latency, tokens.
-
-- **`backend/`** — FastAPI service.
-  - `tools.py` — three plain Python functions the agent can call:
-    `web_search` (DuckDuckGo via `ddgs`, no API key needed), `calculator`
-    (arithmetic evaluated safely via Python's `ast` module — no `eval()`),
-    and `get_current_datetime`.
-  - `agent.py` — the agent loop: send the conversation to Gemini with the
-    tools declared, execute whatever function call(s) it asks for
-    *concurrently*, feed the results back, repeat (capped at 6 steps)
-    until it returns a final answer instead of another tool call. Also
-    handles memory recall/save and trace accounting around that loop.
-  - `memory.py` — the cross-session memory store: a SQLite table of
-    `(session_id, question, answer, embedding)`, a cosine-similarity scan
-    over the most recent rows (capped at 500 — an honest amount of
-    engineering for a demo's data volume, not an excuse to skip a real
-    vector index at a scale where one would actually matter), and the two
-    entry points `recall()` / `save_exchange()` that `agent.py` calls.
-  - `/chat` streams each step as a JSON event (`memory_recall`,
-    `tool_call`, `tool_result`, `answer`, `trace_summary`) as it happens,
-    so the frontend can show the trace live instead of a single opaque
-    wait.
-  - A "Think longer" flag raises Gemini's thinking budget for harder
-    questions, same as the RAG project.
-- **`frontend/`** — React (Vite), a ChatGPT/Gemini-style shell (collapsible
-  sidebar, date-grouped chat history, floating composer) over a
-  liquid-glass visual treatment (translucent panels over blurred colour
-  blobs, light/dark tokens for both themes). Each assistant message
-  shows: a "Recalled N related exchanges" chip when memory found
-  something relevant (expand to see which), its tool calls as small
-  chips with a per-call latency badge (click one to expand the raw
-  result), and an execution trace chip (LLM round-trips, total latency,
-  tokens — expand for the full breakdown). A settings panel (gear icon)
-  covers theme (System/Light/Dark), a Google Sign-In button, and clearing
-  local history. Chat history is stored client-side in `localStorage` by
-  default; signing in with Google upgrades it to server-persisted,
-  cross-device history (see `db.py`/`auth.py`).
+- **`backend/llm.py`** — the one shared Gemini client every agent uses.
+  Two entry points: `generate_structured(prompt, schema)` (a single call
+  constrained to a Pydantic `response_schema`, used by Planner/Reviewer/
+  Synthesizer and a Worker's write-up step) and `generate_with_tools(...)`
+  (the tool-calling loop, used by Workers to gather evidence). Both share one
+  retry helper (429 → exponential backoff, up to `MAX_RETRIES = 6`) and one
+  `asyncio.Semaphore(2)` capping how many Gemini calls are in flight at once
+  — a multi-agent run fires enough calls in quick succession that an
+  unthrottled burst can blow through a free-tier requests-per-minute limit
+  even though the total call volume is modest (see
+  [Known limitations](#known-limitations)).
+- **`backend/research/schemas.py`** — the typed contracts:
+  `ResearchPlan`/`SubQuestion`, `WorkerFinding`, `ReviewResult`,
+  `FinalAnswer`. Used for prompting (as `response_schema`), validation, the
+  API response, and storage — one definition, no duplication.
+- **`backend/research/tools.py`** — `web_search` (DuckDuckGo, reused
+  unchanged from the project's original tools) plus `fetch_url` (requests +
+  BeautifulSoup), so a worker can read a full source after finding it, not
+  just a search snippet.
+- **`backend/research/planner.py` / `worker.py` / `reviewer.py` /
+  `synthesizer.py`** — one file per agent, each a thin function around
+  `llm.py`. A Worker never raises: `run_worker` catches its own failures and
+  returns a `WorkerFinding(failed=True, ...)` instead, so one bad worker
+  never takes the run down (see `tests/test_worker.py`).
+- **`backend/research/orchestrator.py`** — `run_research()`, the async
+  generator described above. Fans concurrent workers into one stream, tracks
+  per-agent timing for `trace_summary`, enforces the review-iteration cap,
+  and wraps every phase so a Planner/Reviewer/Synthesizer failure ends the
+  run with a clear `error` event instead of a crash.
+- **`backend/main.py`** — `POST /research/run` streams the pipeline as
+  newline-delimited JSON (same transport shape the project's original
+  single-agent `/chat` used). `GET /research`, `GET /research/{id}`,
+  `PATCH /research/{id}` (toggle saved), `DELETE /research/{id}` mirror the
+  project's original conversation-history endpoints, for signed-in users.
+- **`backend/db.py`** — SQLite: `users`/`sessions` (Google sign-in, unchanged
+  from the original project) plus `research_runs`/`research_events` (one row
+  per run, one row per agent step — the "Research Process" timeline in the
+  UI reads straight from `research_events`).
+- **`frontend/`** — React (Vite). Sidebar: New Research / Research History /
+  Saved Reports / Settings. Submitting a question renders a live
+  `PipelineTimeline` (one row per agent, ○/●/✓/✕ status, driven directly by
+  the event stream) that settles into a `ResearchReport` (answer, key
+  findings, source cards, a Quality Review checklist derived from the
+  Reviewer's verdict, and an expandable Research Process timeline).
+  Anonymous use keeps run history in `localStorage`; signing in with Google
+  upgrades it to server-persisted, cross-device history — identical pattern
+  to the project's original chat history, just for research runs.
 
 ## Running it
 
@@ -94,131 +124,230 @@ npm install
 npm run dev
 ```
 
-`app.db` is created automatically on first run (SQLite, gitignored — it's
-runtime state, not source; holds the semantic-memory table plus, for
-signed-in users, conversation history).
+`app.db` is created automatically on first run (SQLite, gitignored — runtime
+state, not source).
+
+## Environment variables
+
+| Variable | Required | Notes |
+|---|---|---|
+| `GEMINI_API_KEY` | yes | Free at aistudio.google.com/apikey. Every agent shares one client (`llm.py`). |
+| `GEMINI_MODEL` | no | Defaults to `gemini-3.5-flash-lite`. |
+| `GOOGLE_CLIENT_ID` | no | Only needed for sign-in / server-persisted history; the pipeline works fully anonymously without it. |
+| `VITE_API_URL` (frontend) | no | Defaults to `http://localhost:8001`. |
+| `VITE_GOOGLE_CLIENT_ID` (frontend) | no | Same Google client ID, frontend side. |
+
+No new secrets versus the project's original version — this stays a
+zero-signup-friction demo (`web_search` needs no API key, `fetch_url` is
+plain HTTP).
+
+## Testing
+
+```
+cd backend
+pytest
+```
+
+28 tests, LLM fully mocked (no real API calls, no cost, deterministic):
+`tests/test_schemas.py` (structured-output validation edge cases),
+`tests/test_llm.py` (429 retry/backoff behavior), `tests/test_worker.py` (a
+worker never raises — gather-phase and write-up-phase failures both degrade
+to a `failed` finding), `tests/test_orchestrator.py` (happy path; reviewer
+requests another round then approves; `MAX_REVIEW_ITERATIONS` cap still
+synthesizes; a partial worker failure doesn't crash the run; a planner
+failure ends the run cleanly), `tests/test_api.py` (the full `/research/run`
+event stream shape, history CRUD, auth gating, and — as the end-to-end case —
+that a signed-in run's DB row exists with the right status/answer after the
+stream completes). CI (`.github/workflows/ci.yml`) runs the same suite on
+every push.
+
+## How to add another agent
+
+Agents are just a function returning (or yielding events toward) a typed
+result — there's no framework object to subclass. To add one (say, a
+"Fact-Checker" that runs after the Synthesizer):
+
+1. Add its output shape to `research/schemas.py` (a Pydantic model).
+2. Write `research/fact_checker.py`: one function, `check(answer) ->
+   FactCheckResult`, calling `llm.generate_structured(...)` (or
+   `generate_with_tools` if it needs to search).
+3. Call it from `orchestrator.py` after `synthesizer.synthesize(...)`, timed
+   and wrapped in try/except like every other phase, appending to `trace` and
+   yielding `fact_check_start`/`fact_check_done` events.
+4. Add a case for those event types to `reducePipelineEvent` in
+   `frontend/src/App.jsx` (label, status, detail text) — the row appears in
+   the pipeline automatically.
+
+## How to add another research tool
+
+`fetch_url` (in `research/tools.py`) is the worked example: a plain Python
+function with a narrow, typed contract (`url: str -> str`), added to both
+`TOOL_FUNCTIONS` (the dispatch dict Workers execute against) and
+`TOOL_DECLARATIONS` (the schema Gemini sees). To add another one — say a
+`search_academic_papers` tool — write the function, add it to both, and every
+Worker gets it automatically; no other code changes.
+
+## Example query
+
+```
+curl -X POST http://localhost:8001/research/run \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What are the main tradeoffs between pgvector and Pinecone for a small RAG app?", "run_id": "demo-1"}'
+```
+
+Streams newline-delimited JSON — trimmed to one event per phase (a real run
+interleaves several `tool_call`/`tool_result` events per worker):
+
+```
+{"type": "plan_start"}
+{"type": "plan_done", "sub_questions": [{"id": "sq1", "topic": "Architecture and Infrastructure", ...}, ...], "duration_ms": 2042}
+{"type": "worker_start", "worker": "worker_01", "topic": "Architecture and Infrastructure"}
+{"type": "tool_call", "worker": "worker_01", "tool": "web_search", "args": {"query": "pgvector vs pinecone architecture"}}
+{"type": "tool_result", "worker": "worker_01", "tool": "web_search", "result": "...", "latency_ms": 1840}
+{"type": "worker_done", "worker": "worker_01", "finding": {"task": "...", "findings": [...], "sources": [...], "confidence": "medium", "limitations": [], "failed": false}, "duration_ms": 23351}
+{"type": "review_start", "iteration": 1}
+{"type": "review_done", "iteration": 1, "review": {"approved": true, "missing_topics": [], "contradictions": [], "unsupported_claims": [], "additional_research_required": false, "feedback": [...]}, "duration_ms": 1525}
+{"type": "synthesis_start"}
+{"type": "synthesis_done", "answer": {"answer_markdown": "...", "key_findings": [...], "citations": [...]}, "duration_ms": 3883}
+{"type": "trace_summary", "agents": [...], "total_ms": 45210, "review_iterations": 1}
+```
+
+Real captured run, unedited (this one hit free-tier rate limits partway
+through — kept as the example on purpose, see
+[Known limitations](#known-limitations)):
+
+```
+Research #smoke-test-3
+planner            2.0s
+worker_01          76.1s  (0 sources — rate-limited, failed)
+worker_02          87.2s  (0 sources — rate-limited, failed)
+worker_03          91.2s  (0 sources — rate-limited, failed)
+worker_04          77.7s  (0 sources — rate-limited, failed)
+reviewer_round_1    1.5s
+worker_05..08       — round 2, reviewer flagged the gaps
+reviewer_round_2    1.5s
+worker_09..12       — round 3
+synthesizer         3.9s
+Total             247.7s   review_iterations: 3
+```
+
+That run's final answer, verbatim: *"Based on the provided research
+findings, direct information regarding the specific trade-offs between
+pgvector and Pinecone is unavailable due to task failures, rate limits, and
+uncompleted research steps... a direct comparison ... cannot be established
+from the findings."* — this is the Synthesizer's "avoid hallucinated
+references" instruction doing exactly its job under real, unplanned failure:
+it had almost no usable findings and said so, rather than inventing a
+comparison it had no evidence for.
+
+## Screenshots
+
+Empty state:
+
+![Empty state](docs/screenshots/empty-state.png)
+
+A run in progress — three workers researching concurrently, live tool-call
+counts, reviewer/synthesizer waiting their turn:
+
+![Pipeline running](docs/screenshots/pipeline-running.png)
 
 ## Deployment
 
-- **Frontend** — Azure Static Web Apps (Free tier). Built with Vite
-  (`VITE_API_URL` pointed at the backend below) and pushed with the
-  Static Web Apps CLI: `npx @azure/static-web-apps-cli deploy ./dist
-  --deployment-token <token> --env production`.
-- **Backend** — Azure App Service (Linux, B1, Python 3.12), deployed via
-  `az webapp up` (Oryx builds it server-side from `requirements.txt` — no
-  Docker needed for this path, unlike the Container Apps route below).
-  Startup command is explicit (`uvicorn main:app --host 0.0.0.0 --port
-  8000`) since Oryx's auto-detection doesn't know this is a FastAPI app.
-  `GEMINI_API_KEY`/`GEMINI_MODEL` are set as App Service settings, not
-  baked into the deployed files.
-- **Why App Service instead of Container Apps** (which the Dockerfile/CI
-  in this repo target) — this subscription is an Azure for Students
-  grant, and Azure Container Registry's remote build (`ACR Tasks`, what
-  `az containerapp up --source` uses) is disabled on that tier. App
-  Service's Oryx build doesn't need it. The Dockerfile/`docker-compose.yml`
-  still work for local Docker use; they're just not this deployment's path.
-- **Region constraints** — this subscription is further restricted to a
-  specific region allowlist (`centralindia`, `eastasia`,
-  `koreacentral`, `malaysiawest`, `austriaeast`). Static Web Apps'
-  supported regions only overlap that list at `eastasia`, so frontend and
-  backend intentionally sit in different regions here.
-- **SQLite persistence caveat** — `app.db` lives at `AI_AGENT_DB_DIR`
-  (set to `/home/data` in production), which is Azure App Service's
-  persistent storage mount, so it survives restarts/redeploys. It would
-  **not** survive them at the default path (next to the source files),
-  since Oryx extracts the app fresh into an ephemeral directory on every
-  deploy — worth knowing if you fork this and see history vanish after a
-  redeploy with `AI_AGENT_DB_DIR` unset.
+Unchanged from the project's original setup — this session focused on
+functionality, not redeploying (see the note at the top of this README):
 
-## Example request
+- **Frontend** — Azure Static Web Apps (Free tier), built with Vite
+  (`VITE_API_URL` pointed at the backend) and pushed with the Static Web
+  Apps CLI.
+- **Backend** — Azure App Service (Linux, B1, Python 3.12) via `az webapp
+  up` (Oryx builds from `requirements.txt`). Startup command:
+  `uvicorn main:app --host 0.0.0.0 --port 8000`.
+- **Why App Service instead of Container Apps** (which `Dockerfile`/CI still
+  target) — this subscription is an Azure for Students grant, and Azure
+  Container Registry's remote build is disabled on that tier.
+- **SQLite persistence** — `app.db` lives at `AI_AGENT_DB_DIR` (set to
+  `/home/data` in production, App Service's persistent mount) so it survives
+  restarts/redeploys. The schema changed in this rebuild (`research_runs`/
+  `research_events` replace the old `conversations`/`messages`), so a
+  redeploy of this version needs a fresh `app.db` — it's gitignored runtime
+  state, not something to migrate by hand.
 
-```
-curl -X POST http://localhost:8001/chat \
-  -H "Content-Type: application/json" \
-  -d '{"question": "What is (482*17)-9, and what time is it?", "session_id": "demo-1"}'
-```
+## Known limitations
 
-Streams newline-delimited JSON events:
-```
-{"type": "tool_call", "tool": "calculator", "args": {"expression": "(482*17)-9"}}
-{"type": "tool_call", "tool": "get_current_datetime", "args": {}}
-{"type": "tool_result", "tool": "calculator", "result": "8185", "latency_ms": 1}
-{"type": "tool_result", "tool": "get_current_datetime", "result": "2026-08-29 06:47 UTC", "latency_ms": 1}
-{"type": "answer", "text": "(482 * 17) - 9 is 8,185, and the current UTC time is 2026-08-29 06:47 UTC."}
-{"type": "trace_summary", "steps": 2, "llm_calls": 2, "total_latency_ms": 4015, "tokens": {"prompt_tokens": 732, "completion_tokens": 82, "total_tokens": 814}}
-```
-
-Asking a related question from a *different* `session_id` afterward
-produces a `memory_recall` event before the answer — verified live: a
-follow-up "what did I ask you to multiply earlier?" from a fresh session
-recalled the exchange above at 0.68 cosine similarity and answered
-correctly from it, with zero tool calls.
-
-## What this demonstrates
-- A real agentic loop: the model decides *whether* and *which* tool to
-  call, not a hardcoded "always search first" pipeline — verified live
-  with a two-tool question (calculator + web search) answered correctly
-  in one pass, with both tools dispatched concurrently.
-- Tool execution stays local and typed (three Python functions with a
-  narrow contract), not arbitrary code execution — a deliberately safer
-  scope than "let the model run shell commands."
-- Streaming a real execution trace, not just the answer — per-tool
-  latency and per-turn token accounting, measured from the actual API
-  responses (`usage_metadata`), not estimated.
-- Retrieval-based memory applied to agent state instead of documents —
-  the same embed-then-cosine-similarity idea as the RAG project, reused
-  here to recall *conversations* rather than document chunks.
+- **Free-tier rate limits under real concurrent load.** A run fires enough
+  Gemini calls in quick succession (several workers × several calls each,
+  plus reviewer/synthesizer) that it can exceed the free tier's
+  requests-per-minute limit even with the throttling in `llm.py` (a
+  semaphore capping concurrent calls, staggered worker starts, 6-attempt
+  backoff). The system degrades correctly when this happens — failed workers
+  are marked `failed` and the run continues with partial findings, a failed
+  Reviewer falls back to an unreviewed pass-through, a failed Synthesizer
+  ends the run with a clear error — but a heavily rate-limited run can take
+  several minutes and produce a thin answer. This is a real, observed
+  behavior (see the example above), not a hypothetical; the honest fix is a
+  paid tier or a lower-traffic testing cadence, not more client-side code.
+- **No token-level streaming of the final answer.** The Synthesizer's
+  markdown arrives as one `synthesis_done` event once the call completes,
+  not word-by-word — a deliberate scope call, since Gemini's structured
+  (`response_schema`) mode doesn't stream partial JSON in a form worth
+  rendering incrementally. What *does* stream live is the pipeline itself
+  (each agent's start/progress/done).
+- **No persistence mid-run.** A signed-in user's run is written to
+  `research_runs` once, after the stream finishes (success or error) —
+  closing the tab mid-run loses that run's history entry (anonymous
+  `localStorage` history has the same property, since it's built from the
+  same stream).
 
 ## Interview prep
 
-**Why manual function-calling instead of the SDK's automatic mode?**
-`google-genai` can auto-execute plain Python functions passed as tools,
-but that hides the intermediate steps. Declaring tools explicitly and
-running the loop by hand means the app can stream `tool_call`/`tool_result`
-events to the UI as they happen — the visible trace is the point of an
-"agent" demo, not an implementation detail to abstract away.
+**Why hand-rolled orchestration instead of CrewAI/LangGraph?** Control and
+observability. The point of this project is the live pipeline view and a
+typed event stream the frontend can render — that means owning exactly when
+each event fires, which a framework's own event/callback surface would sit
+between. The actual orchestration logic (a bounded review loop, a queue-based
+fan-in for concurrent workers) is a few dozen lines of `asyncio`, not enough
+complexity to justify a framework dependency for this scope.
 
-**Why DuckDuckGo instead of a paid/keyed search API (Tavily, SerpAPI)?**
-Zero signup friction and no per-query cost, which matters for a project
-meant to be demoed repeatedly. The tradeoff is reliability — DuckDuckGo's
-unofficial API can degrade — worth naming as a known limitation and a
-clear upgrade path (Tavily is purpose-built for AI agents and has a
-generous free tier) rather than a permanent design choice.
+**Why structured output (`response_schema`) instead of asking the model for
+JSON and parsing it?** Reliability and less code. `response_schema` makes
+Gemini constrain its own output to the shape, and `response.parsed` returns
+an already-validated Pydantic instance — no regex, no "strip the markdown
+code fence the model added anyway," no silent acceptance of a malformed
+shape. It's also literally the same shape used for prompting, validating, the
+API response, and storage — one model, not four ad-hoc conversions.
 
-**Why a hand-rolled calculator instead of `eval()`?** `eval()` on
-arbitrary model-generated strings is a code-injection risk (the model's
-output isn't trusted input). Parsing with `ast.parse` and only walking a
-fixed whitelist of numeric operators makes it impossible to execute
-anything except arithmetic, regardless of what string the model sends.
+**What stops the reviewer from looping forever?** `MAX_REVIEW_ITERATIONS =
+2` extra rounds in `orchestrator.py` — after that, the pipeline synthesizes a
+best-effort answer from whatever it has, rather than researching forever.
+Independently, each *worker* also has its own step cap (`max_steps=3` in its
+tool-calling loop), so a single stuck worker can't hang a round either.
 
-**What stops an infinite tool-calling loop?** A hard cap of 6 steps in
-`agent.py` — if the model keeps requesting tools without converging on
-an answer, the loop gives up and says so rather than looping forever or
-running up API costs.
+**How does a bad worker not take the whole run down?** `run_worker` in
+`worker.py` never raises — both its gather phase (tool use) and write-up
+phase (structured output) are wrapped in try/except, returning a
+`WorkerFinding(failed=True, limitations=[...])` on any failure. The
+orchestrator's queue-based fan-in depends on this contract: it waits for a
+`worker_done` event per worker, so a worker that raised instead of returning
+would stall the batch forever (see `tests/test_worker.py` for why this
+contract is tested directly, not just exercised incidentally through
+orchestrator tests).
 
-**How does memory recall differ from normal chat history?** It's semantic
-retrieval, not a transcript. A follow-up in the *same* conversation like
-"and multiply that by 2" still won't resolve "that" — `contents` is
-rebuilt fresh per request, there's no running transcript. What memory adds
-is: any *finished* exchange, from any past session, gets embedded and
-becomes searchable, so a semantically similar question later — even in a
-brand new session — retrieves it. Chat history and semantic memory solve
-different problems; this project deliberately has the second, not the
-first, since the interesting engineering question (embed → store →
-retrieve by similarity) is the same shape as the RAG project's, just
-applied to conversations instead of documents.
+**Why was the old single-agent `/chat` (and its cross-session semantic
+memory in `memory.py`) removed instead of kept as a second mode?** Scope and
+coherence. This project's story is "multi-agent research system," and the
+old chat's premise — a multi-turn conversation with implicit chat history —
+doesn't compose with a single-shot "ask a question, get a report" pipeline
+without meaningfully more UI/state complexity (two different history models,
+two different composers). The chat's cross-session memory (embed a question,
+recall similar past exchanges) is also a chat-specific idea; a research run's
+"history" is just a list of past reports, not something semantic recall adds
+to. The old implementation is still in git history if either idea is worth
+resurrecting later.
 
-**Why SQLite + a Python loop instead of a real vector database?** Scale.
-At a few hundred stored exchanges, a linear cosine-similarity scan over
-~768-float vectors runs in single-digit milliseconds — a dedicated vector
-index (Chroma, pgvector, Pinecone) is solving a problem this project
-doesn't have yet. The `recall()`/`save_exchange()` interface in `memory.py`
-is small on purpose, so swapping the storage/search backend later doesn't
-touch `agent.py` at all.
-
-**What stops a bad memory recall from corrupting the answer?** Two guards:
-a minimum-similarity threshold (0.55) so unrelated past exchanges never
-get injected, and the system prompt explicitly tells the model to use
-recalled context "only if it's actually relevant... don't force a
-connection that isn't there" — the retrieval can be wrong, so the model
-is told to treat it as a hint, not ground truth.
+**What happens when a research run genuinely can't be answered well (see the
+example run above)?** The Synthesizer is instructed to "never invent a
+source that isn't in the findings" and to note real uncertainty rather than
+paper over gaps — verified live under actual rate-limit-induced failures
+(not a staged test): with almost no usable findings, it said so directly
+instead of fabricating a confident comparison. That instruction is doing
+real work, not just decorating the prompt.

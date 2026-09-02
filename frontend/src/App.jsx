@@ -1,12 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import './App.css'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8001'
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
-const REQUEST_TIMEOUT_MS = 45000
-const THINK_LONGER_TIMEOUT_MS = 75000
-const CONVERSATIONS_KEY = 'ai-research-agent-conversations'
+const REQUEST_TIMEOUT_MS = 280000 // multi-agent runs with a review round can take a few minutes
+const RUNS_KEY = 'ai-research-agent-runs'
 const THEME_KEY = 'ai-research-agent-theme'
 const TOKEN_KEY = 'ai-research-agent-session-token'
 
@@ -20,15 +19,6 @@ function AssistantIcon() {
   return (
     <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
       <path d="M12 2 9.5 8.5 3 11l6.5 2.5L12 20l2.5-6.5L21 11l-6.5-2.5Z" />
-    </svg>
-  )
-}
-
-function UserIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8" />
     </svg>
   )
 }
@@ -62,6 +52,14 @@ function CloseIcon() {
   )
 }
 
+function BookmarkIcon({ filled }) {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+      <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1Z" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 function SettingsPanel({
   open,
   onClose,
@@ -71,7 +69,7 @@ function SettingsPanel({
   onSignOut,
   googleButtonRef,
   onClearLocalHistory,
-  localChatCount,
+  localRunCount,
 }) {
   if (!open) return null
   return (
@@ -119,7 +117,8 @@ function SettingsPanel({
                 </div>
               </div>
               <p className="settings-hint">
-                Your chat history is saved to your account and available on any device you sign in on.
+                Your research history is saved to your account and available on any device you sign
+                in on.
               </p>
               <button type="button" className="sign-out-btn" onClick={onSignOut}>
                 Sign out
@@ -128,8 +127,8 @@ function SettingsPanel({
           ) : (
             <>
               <p className="settings-hint">
-                Sign in with Google to save your chat history to your account so it's available on any
-                device. Without signing in, history stays only in this browser.
+                Sign in with Google to save your research history to your account so it's available
+                on any device. Without signing in, history stays only in this browser.
               </p>
               {GOOGLE_CLIENT_ID ? (
                 <div ref={googleButtonRef} className="google-btn-slot" />
@@ -145,18 +144,18 @@ function SettingsPanel({
         <div className="settings-section">
           <div className="settings-label">Data</div>
           <p className="settings-hint">
-            {localChatCount > 0
-              ? `${localChatCount} chat${localChatCount > 1 ? 's are' : ' is'} stored in this browser.`
-              : 'No chats stored in this browser yet.'}
+            {localRunCount > 0
+              ? `${localRunCount} research run${localRunCount > 1 ? 's are' : ' is'} stored in this browser.`
+              : 'No research runs stored in this browser yet.'}
             {authUser && ' Signed-in history on the server is not affected by clearing this.'}
           </p>
           <button
             type="button"
             className="sign-out-btn danger"
-            disabled={localChatCount === 0}
+            disabled={localRunCount === 0}
             onClick={onClearLocalHistory}
           >
-            Clear chats stored in this browser
+            Clear runs stored in this browser
           </button>
         </div>
 
@@ -164,105 +163,200 @@ function SettingsPanel({
           <div className="settings-label">About this build</div>
           <ul className="about-list">
             <li>
-              <strong>Concurrent tools</strong> — multiple tool calls in one turn run at the same time
-              (asyncio.gather), not one after another.
+              <strong>Multi-agent pipeline</strong> — a Planner breaks the question into
+              sub-questions, Worker agents research them concurrently, a Reviewer checks the
+              findings and can send workers back for another round, and a Synthesizer writes the
+              final answer.
             </li>
             <li>
-              <strong>Execution trace</strong> — every step is timed and Gemini's token usage is
-              accumulated, shown per-tool and per-turn.
+              <strong>Real tool use</strong> — Workers call web_search and fetch_url themselves;
+              nothing here is scripted or mocked.
             </li>
             <li>
-              <strong>Cross-session memory</strong> — finished exchanges are embedded and stored, so a
-              related question later — even in a new session — can recall them.
+              <strong>Full observability</strong> — every agent's duration, tool calls, and sources
+              found are tracked and shown in the Research Process timeline.
             </li>
           </ul>
-          <p className="settings-hint">
-            Enter sends · Shift+Enter for a new line · Esc closes this panel.
-          </p>
+          <p className="settings-hint">Esc closes this panel.</p>
         </div>
       </div>
     </div>
   )
 }
 
-function Step({ step }) {
-  const [open, setOpen] = useState(false)
-  const argsText = Object.values(step.args || {}).join(', ')
-  const ready = step.result != null
-  return (
-    <div className="step">
-      <button
-        className="step-chip"
-        onClick={() => ready && setOpen((v) => !v)}
-        aria-expanded={open}
-        disabled={!ready}
-      >
-        <span className={`step-dot ${ready ? 'done' : 'pending'}`} />
-        <span className="step-tool">{step.tool}</span>
-        {argsText && <span className="step-args">{argsText}</span>}
-        {step.latencyMs != null && <span className="step-latency">{step.latencyMs}ms</span>}
-      </button>
-      {open && ready && <pre className="step-result">{step.result}</pre>}
-    </div>
-  )
-}
+const STATUS_GLYPH = { waiting: '○', running: '●', done: '✓', failed: '✕' }
 
-function MemoryRecall({ recall }) {
+function PipelineRow({ row }) {
   const [open, setOpen] = useState(false)
-  if (!recall || recall.count === 0) return null
+  const expandable = row.status !== 'waiting' && (row.finding || row.review || row.answer)
   return (
-    <div className="memory-recall">
-      <button className="memory-chip" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-        <span className="memory-icon">⟲</span>
-        Recalled {recall.count} related exchange{recall.count > 1 ? 's' : ''} from earlier sessions
+    <div className={`pipeline-row status-${row.status}`}>
+      <button
+        className="pipeline-row-head"
+        onClick={() => expandable && setOpen((v) => !v)}
+        aria-expanded={open}
+        disabled={!expandable}
+      >
+        <span className={`pipeline-glyph glyph-${row.status}`}>{STATUS_GLYPH[row.status]}</span>
+        <span className="pipeline-label">{row.label}</span>
+        {row.topic && <span className="pipeline-topic">{row.topic}</span>}
+        <span className="pipeline-detail">{row.detail}</span>
       </button>
-      {open && (
-        <div className="memory-items">
-          {recall.items.map((item, i) => (
-            <div key={i} className="memory-item">
-              <span className="memory-sim">{Math.round(item.similarity * 100)}% match</span>
-              <p className="memory-q">"{item.question}"</p>
-            </div>
+      {open && row.finding && (
+        <div className="pipeline-expand">
+          {row.finding.findings.map((f, i) => (
+            <p key={i}>{f}</p>
           ))}
+          {row.finding.limitations.length > 0 && (
+            <p className="pipeline-limitations">Limitations: {row.finding.limitations.join('; ')}</p>
+          )}
+        </div>
+      )}
+      {open && row.review && (
+        <div className="pipeline-expand">
+          {row.review.feedback.map((f, i) => (
+            <p key={i}>{f}</p>
+          ))}
+          {row.review.missing_topics.length > 0 && (
+            <p className="pipeline-limitations">Gaps: {row.review.missing_topics.join('; ')}</p>
+          )}
         </div>
       )}
     </div>
   )
 }
 
-function TraceSummary({ trace }) {
+function PipelineTimeline({ rows }) {
+  if (!rows || rows.length === 0) return null
+  return (
+    <div className="pipeline">
+      {rows.map((row) => (
+        <PipelineRow key={row.id} row={row} />
+      ))}
+    </div>
+  )
+}
+
+function sourceDomain(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return url
+  }
+}
+
+function QualityReview({ review }) {
+  if (!review) return null
+  const checks = [
+    { ok: review.unsupported_claims.length === 0, label: 'Sources verified', gap: review.unsupported_claims },
+    { ok: review.missing_topics.length === 0, label: 'Research coverage', gap: review.missing_topics },
+    { ok: review.contradictions.length === 0, label: 'No major contradictions', gap: review.contradictions },
+  ]
+  return (
+    <div className="quality-review">
+      <h3>Quality Review</h3>
+      <ul>
+        {checks.map((c) => (
+          <li key={c.label} className={c.ok ? 'ok' : 'warn'}>
+            <span className="quality-glyph">{c.ok ? '✓' : '!'}</span>
+            {c.label}
+            {!c.ok && <span className="quality-gap"> — {c.gap.join('; ')}</span>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function TraceTable({ trace }) {
   const [open, setOpen] = useState(false)
-  if (!trace) return null
+  if (!trace || trace.length === 0) return null
+  const total = trace.reduce((sum, e) => sum + (e.duration_ms || 0), 0)
   return (
     <div className="trace-summary">
       <button className="trace-chip" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
         <span className="trace-icon">◷</span>
-        {trace.llm_calls} LLM call{trace.llm_calls > 1 ? 's' : ''} · {trace.total_latency_ms}ms ·{' '}
-        {trace.tokens.total_tokens} tokens
+        {trace.length} agent step{trace.length > 1 ? 's' : ''} · {(total / 1000).toFixed(1)}s total
       </button>
       {open && (
         <dl className="trace-details">
-          <dt>Tool calls</dt>
-          <dd>{trace.steps}</dd>
-          <dt>LLM round-trips</dt>
-          <dd>{trace.llm_calls}</dd>
-          <dt>Total latency</dt>
-          <dd>{trace.total_latency_ms}ms</dd>
-          <dt>Prompt tokens</dt>
-          <dd>{trace.tokens.prompt_tokens}</dd>
-          <dt>Completion tokens</dt>
-          <dd>{trace.tokens.completion_tokens}</dd>
-          <dt>Total tokens</dt>
-          <dd>{trace.tokens.total_tokens}</dd>
+          {trace.map((e, i) => (
+            <Fragment key={i}>
+              <dt>{e.name}</dt>
+              <dd>{((e.duration_ms || 0) / 1000).toFixed(1)}s</dd>
+            </Fragment>
+          ))}
+          <dt>Total</dt>
+          <dd>{(total / 1000).toFixed(1)}s</dd>
         </dl>
       )}
     </div>
   )
 }
 
-function loadConversations() {
+function collectFallbackSources(pipeline) {
+  const seen = new Set()
+  for (const row of pipeline || []) {
+    for (const url of row.finding?.sources || []) seen.add(url)
+  }
+  return [...seen]
+}
+
+function ResearchReport({ run, onToggleSaved }) {
+  const sources = run.citations && run.citations.length > 0 ? run.citations : collectFallbackSources(run.pipeline)
+  return (
+    <div className="research-report">
+      <div className="report-header">
+        <h2>Research Summary</h2>
+        <button
+          type="button"
+          className={`bookmark-btn ${run.saved ? 'active' : ''}`}
+          onClick={onToggleSaved}
+          aria-pressed={run.saved}
+          title={run.saved ? 'Remove from Saved Reports' : 'Save this report'}
+        >
+          <BookmarkIcon filled={run.saved} />
+        </button>
+      </div>
+
+      <div className="report-answer">
+        <ReactMarkdown>{run.answerMarkdown}</ReactMarkdown>
+      </div>
+
+      {run.keyFindings && run.keyFindings.length > 0 && (
+        <>
+          <h3>Key Findings</h3>
+          <ul className="key-findings">
+            {run.keyFindings.map((f, i) => (
+              <li key={i}>{f}</li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {sources.length > 0 && (
+        <>
+          <h3>Sources</h3>
+          <div className="source-cards">
+            {sources.map((url, i) => (
+              <a key={i} className="source-card" href={url} target="_blank" rel="noreferrer">
+                <span className="source-domain">{sourceDomain(url)}</span>
+                <span className="source-url">{url}</span>
+              </a>
+            ))}
+          </div>
+        </>
+      )}
+
+      <QualityReview review={run.review} />
+      <TraceTable trace={run.trace} />
+    </div>
+  )
+}
+
+function loadRuns() {
   try {
-    const raw = localStorage.getItem(CONVERSATIONS_KEY)
+    const raw = localStorage.getItem(RUNS_KEY)
     const parsed = raw ? JSON.parse(raw) : []
     return Array.isArray(parsed) ? parsed : []
   } catch {
@@ -270,10 +364,8 @@ function loadConversations() {
   }
 }
 
-function deriveTitle(messages) {
-  const firstUser = messages.find((m) => m.role === 'user')
-  if (!firstUser) return 'New chat'
-  const text = firstUser.content.trim().replace(/\s+/g, ' ')
+function deriveTitle(question) {
+  const text = question.trim().replace(/\s+/g, ' ')
   return text.length > 44 ? `${text.slice(0, 44)}…` : text
 }
 
@@ -285,10 +377,10 @@ function startOfDay(ts) {
   return d.getTime()
 }
 
-/** Buckets conversations into ChatGPT/Gemini-style date sections, most
- * recent group first, items within a group most-recent-first. */
-function groupConversationsByDate(conversations) {
-  const sorted = [...conversations].sort((a, b) => b.updatedAt - a.updatedAt)
+/** Buckets runs into date sections, most recent group first, items within
+ * a group most-recent-first — same grouping shape the chat sidebar used. */
+function groupRunsByDate(runs) {
+  const sorted = [...runs].sort((a, b) => b.updatedAt - a.updatedAt)
   const today = startOfDay(Date.now())
 
   const buckets = [
@@ -299,21 +391,18 @@ function groupConversationsByDate(conversations) {
   ]
   const olderByMonth = new Map()
 
-  for (const c of sorted) {
-    const dayStart = startOfDay(c.updatedAt)
+  for (const r of sorted) {
+    const dayStart = startOfDay(r.updatedAt)
     const daysAgo = Math.round((today - dayStart) / MS_PER_DAY)
 
-    if (daysAgo <= 0) buckets[0].items.push(c)
-    else if (daysAgo === 1) buckets[1].items.push(c)
-    else if (daysAgo <= 7) buckets[2].items.push(c)
-    else if (daysAgo <= 30) buckets[3].items.push(c)
+    if (daysAgo <= 0) buckets[0].items.push(r)
+    else if (daysAgo === 1) buckets[1].items.push(r)
+    else if (daysAgo <= 7) buckets[2].items.push(r)
+    else if (daysAgo <= 30) buckets[3].items.push(r)
     else {
-      const label = new Date(c.updatedAt).toLocaleDateString(undefined, {
-        month: 'long',
-        year: 'numeric',
-      })
+      const label = new Date(r.updatedAt).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
       if (!olderByMonth.has(label)) olderByMonth.set(label, [])
-      olderByMonth.get(label).push(c)
+      olderByMonth.get(label).push(r)
     }
   }
 
@@ -322,29 +411,103 @@ function groupConversationsByDate(conversations) {
   )
 }
 
+/** Folds one pipeline event into the row list the UI renders. Rows are
+ * upserted by id so late/duplicate events are safe to replay (e.g. when
+ * restoring an in-progress run isn't attempted — but the same reducer
+ * also builds history rows from a persisted trace, see runFromServerDetail). */
+function reducePipelineEvent(rows, event) {
+  const upsert = (id, patch) => {
+    const idx = rows.findIndex((r) => r.id === id)
+    if (idx === -1) return [...rows, { id, status: 'waiting', detail: 'Waiting', ...patch }]
+    const next = [...rows]
+    next[idx] = { ...next[idx], ...patch }
+    return next
+  }
+  switch (event.type) {
+    case 'plan_start':
+      return upsert('planner', { kind: 'planner', label: 'PLANNER', status: 'running', detail: 'Creating research plan…' })
+    case 'plan_done': {
+      let next = upsert('planner', {
+        status: 'done',
+        detail: `Research plan created (${event.sub_questions.length} sub-question${event.sub_questions.length === 1 ? '' : 's'})`,
+      })
+      event.sub_questions.forEach((sq, i) => {
+        const id = `worker_${String(i + 1).padStart(2, '0')}`
+        if (!next.some((r) => r.id === id)) {
+          next = [...next, { id, kind: 'worker', label: `WORKER ${String(i + 1).padStart(2, '0')}`, topic: sq.topic, status: 'waiting', detail: 'Waiting' }]
+        }
+      })
+      if (!next.some((r) => r.id === 'reviewer')) {
+        next = [...next, { id: 'reviewer', kind: 'reviewer', label: 'REVIEWER', status: 'waiting', detail: 'Waiting' }]
+      }
+      if (!next.some((r) => r.id === 'synthesizer')) {
+        next = [...next, { id: 'synthesizer', kind: 'synthesizer', label: 'SYNTHESIZER', status: 'waiting', detail: 'Waiting' }]
+      }
+      return next
+    }
+    case 'worker_start':
+      return upsert(event.worker, {
+        kind: 'worker',
+        label: `WORKER ${event.worker.replace('worker_', '')}`,
+        topic: event.topic,
+        status: 'running',
+        detail: 'Searching sources…',
+      })
+    case 'tool_call':
+      return upsert(event.worker, { detail: event.tool === 'fetch_url' ? 'Reading a source…' : 'Searching sources…' })
+    case 'tool_result': {
+      const row = rows.find((r) => r.id === event.worker)
+      const count = (row?.toolCallCount || 0) + 1
+      return upsert(event.worker, { toolCallCount: count, detail: `${count} tool call${count > 1 ? 's' : ''} made` })
+    }
+    case 'worker_done':
+      return upsert(event.worker, {
+        status: event.finding.failed ? 'failed' : 'done',
+        detail: event.finding.failed
+          ? 'Failed — continuing with partial results'
+          : `${event.finding.sources.length} source${event.finding.sources.length === 1 ? '' : 's'} collected`,
+        finding: event.finding,
+      })
+    case 'review_start':
+      return upsert('reviewer', { kind: 'reviewer', label: 'REVIEWER', status: 'running', detail: `Reviewing (round ${event.iteration})…` })
+    case 'review_done':
+      return upsert('reviewer', {
+        status: 'done',
+        detail: event.review.approved ? 'Approved' : `Requested more research (round ${event.iteration})`,
+        review: event.review,
+      })
+    case 'iteration_start':
+      return upsert('reviewer', { status: 'waiting', detail: `Round ${event.iteration} pending…` })
+    case 'synthesis_start':
+      return upsert('synthesizer', { kind: 'synthesizer', label: 'SYNTHESIZER', status: 'running', detail: 'Writing final answer…' })
+    case 'synthesis_done':
+      return upsert('synthesizer', { status: 'done', detail: 'Done' })
+    default:
+      return rows
+  }
+}
+
 function App() {
-  const [conversations, setConversations] = useState(loadConversations)
+  const [runs, setRuns] = useState(loadRuns)
   const [activeId, setActiveId] = useState(() => crypto.randomUUID())
   const [question, setQuestion] = useState('')
   const [sending, setSending] = useState(false)
-  const [thinkLonger, setThinkLonger] = useState(false)
   const [error, setError] = useState(null)
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 880)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [historyTab, setHistoryTab] = useState('history')
   const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) || 'system')
   const [authUser, setAuthUser] = useState(null)
-  const chatEndRef = useRef(null)
+  const scrollEndRef = useRef(null)
   const controllerRef = useRef(null)
-  const textareaRef = useRef(null)
   const googleButtonRef = useRef(null)
   const tokenRef = useRef(localStorage.getItem(TOKEN_KEY))
 
-  const activeConversation = conversations.find((c) => c.id === activeId)
-  const messages = activeConversation ? activeConversation.messages || [] : []
+  const activeRun = runs.find((r) => r.id === activeId)
 
   useEffect(() => {
-    localStorage.setItem(CONVERSATIONS_KEY, JSON.stringify(conversations))
-  }, [conversations])
+    localStorage.setItem(RUNS_KEY, JSON.stringify(runs))
+  }, [runs])
 
   useEffect(() => {
     if (!settingsOpen) return
@@ -362,14 +525,13 @@ function App() {
     localStorage.setItem(THEME_KEY, theme)
   }, [theme])
 
-  // Validate a stored session token on load, so a reload keeps you signed in.
   useEffect(() => {
     if (!tokenRef.current) return
     fetch(`${API_URL}/me`, { headers: { Authorization: `Bearer ${tokenRef.current}` } })
       .then((res) => (res.ok ? res.json() : Promise.reject()))
       .then((user) => {
         setAuthUser(user)
-        return syncRemoteConversations()
+        return syncRemoteRuns()
       })
       .catch(() => {
         tokenRef.current = null
@@ -378,22 +540,23 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const syncRemoteConversations = async () => {
+  const syncRemoteRuns = async () => {
     if (!tokenRef.current) return
     try {
-      const res = await fetch(`${API_URL}/conversations`, {
-        headers: { Authorization: `Bearer ${tokenRef.current}` },
-      })
+      const res = await fetch(`${API_URL}/research`, { headers: { Authorization: `Bearer ${tokenRef.current}` } })
       if (!res.ok) return
       const remote = await res.json()
-      setConversations((prev) => {
-        const knownIds = new Set(prev.map((c) => c.id))
+      setRuns((prev) => {
+        const known = new Set(prev.map((r) => r.id))
         const additions = remote
-          .filter((r) => !knownIds.has(r.id))
+          .filter((r) => !known.has(r.id))
           .map((r) => ({
             id: r.id,
-            title: r.title,
-            messages: null, // fetched lazily when opened, see selectConversation
+            question: r.question,
+            title: deriveTitle(r.question),
+            status: r.status,
+            saved: r.saved,
+            detailLoaded: false,
             updatedAt: new Date(r.updated_at.replace(' ', 'T') + 'Z').getTime(),
           }))
         return [...prev, ...additions]
@@ -403,8 +566,6 @@ function App() {
     }
   }
 
-  // Render Google's own Sign-In button once its script is loaded and the
-  // settings panel is showing the slot for it.
   useEffect(() => {
     if (!settingsOpen || authUser || !GOOGLE_CLIENT_ID || !googleButtonRef.current) return
     if (!window.google?.accounts?.id) return
@@ -422,25 +583,18 @@ function App() {
           tokenRef.current = session_token
           localStorage.setItem(TOKEN_KEY, session_token)
           setAuthUser(user)
-          await syncRemoteConversations()
+          await syncRemoteRuns()
         } catch {
           setError('Google sign-in failed. Please try again.')
         }
       },
     })
-    window.google.accounts.id.renderButton(googleButtonRef.current, {
-      theme: 'outline',
-      size: 'medium',
-      width: 260,
-    })
+    window.google.accounts.id.renderButton(googleButtonRef.current, { theme: 'outline', size: 'medium', width: 260 })
   }, [settingsOpen, authUser])
 
   const signOut = async () => {
     if (tokenRef.current) {
-      fetch(`${API_URL}/auth/logout`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${tokenRef.current}` },
-      }).catch(() => {})
+      fetch(`${API_URL}/auth/logout`, { method: 'POST', headers: { Authorization: `Bearer ${tokenRef.current}` } }).catch(() => {})
     }
     tokenRef.current = null
     localStorage.removeItem(TOKEN_KEY)
@@ -448,56 +602,29 @@ function App() {
   }
 
   const clearLocalHistory = () => {
-    setConversations([])
+    setRuns([])
     setActiveId(crypto.randomUUID())
   }
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, sending])
+    scrollEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [activeRun?.pipeline, sending])
 
-  useEffect(() => {
-    const el = textareaRef.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`
-  }, [question])
-
-  const applyMessages = (updater) => {
-    setConversations((prev) => {
-      const idx = prev.findIndex((c) => c.id === activeId)
-      if (idx === -1) {
-        const newMessages = updater([])
-        return [
-          { id: activeId, title: deriveTitle(newMessages), messages: newMessages, updatedAt: Date.now() },
-          ...prev,
-        ]
-      }
+  const patchRun = (id, patch) => {
+    setRuns((prev) => {
+      const idx = prev.findIndex((r) => r.id === id)
+      if (idx === -1) return prev
       const next = [...prev]
-      const updatedMessages = updater(next[idx].messages)
-      next[idx] = {
-        ...next[idx],
-        messages: updatedMessages,
-        updatedAt: Date.now(),
-        title: next[idx].title === 'New chat' || !next[idx].title ? deriveTitle(updatedMessages) : next[idx].title,
-      }
+      next[idx] = { ...next[idx], ...patch, updatedAt: Date.now() }
       return next
     })
   }
 
-  const stopGenerating = () => {
-    controllerRef.current?.abort()
-  }
-
-  // On mobile the sidebar is a full-screen overlay drawer, so it should
-  // auto-dismiss once you've picked something from it. On desktop it's a
-  // permanent docked column — auto-closing it there would make the whole
-  // nav rail vanish every time you switch chats.
   const closeSidebarOnMobile = () => {
     if (window.innerWidth <= 880) setSidebarOpen(false)
   }
 
-  const startNewChat = () => {
+  const startNewResearch = () => {
     controllerRef.current?.abort()
     setActiveId(crypto.randomUUID())
     setQuestion('')
@@ -506,92 +633,107 @@ function App() {
     closeSidebarOnMobile()
   }
 
-  const selectConversation = async (id) => {
+  const selectRun = async (id) => {
     if (id === activeId) {
       closeSidebarOnMobile()
       return
     }
     controllerRef.current?.abort()
 
-    const target = conversations.find((c) => c.id === id)
-    if (target && target.messages === null && tokenRef.current) {
+    const target = runs.find((r) => r.id === id)
+    if (target && target.detailLoaded === false && tokenRef.current) {
       try {
-        const res = await fetch(`${API_URL}/conversations/${id}`, {
-          headers: { Authorization: `Bearer ${tokenRef.current}` },
-        })
+        const res = await fetch(`${API_URL}/research/${id}`, { headers: { Authorization: `Bearer ${tokenRef.current}` } })
         if (res.ok) {
-          const { messages: remoteMessages } = await res.json()
-          setConversations((prev) =>
-            prev.map((c) => (c.id === id ? { ...c, messages: remoteMessages } : c))
+          const detail = await res.json()
+          setRuns((prev) =>
+            prev.map((r) =>
+              r.id === id
+                ? {
+                    ...r,
+                    detailLoaded: true,
+                    answerMarkdown: detail.final_answer,
+                    keyFindings: detail.key_findings,
+                    citations: detail.sources,
+                    review: detail.review,
+                    trace: detail.trace,
+                    pipeline: tracePipelineRows(detail.trace),
+                  }
+                : r
+            )
           )
         }
       } catch {
-        // fall through and select anyway; the panel will just show nothing to load
+        // fall through and select anyway
       }
     }
 
     setActiveId(id)
-    setQuestion('')
-    setError(null)
     setSending(false)
     closeSidebarOnMobile()
   }
 
-  const deleteConversation = (id, e) => {
+  const deleteRun = (id, e) => {
     e.stopPropagation()
-    setConversations((prev) => prev.filter((c) => c.id !== id))
-    if (id === activeId) {
-      setActiveId(crypto.randomUUID())
-    }
+    setRuns((prev) => prev.filter((r) => r.id !== id))
+    if (id === activeId) setActiveId(crypto.randomUUID())
     if (tokenRef.current) {
-      fetch(`${API_URL}/conversations/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${tokenRef.current}` },
+      fetch(`${API_URL}/research/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${tokenRef.current}` } }).catch(() => {})
+    }
+  }
+
+  const toggleSaved = (id) => {
+    const run = runs.find((r) => r.id === id)
+    if (!run) return
+    const saved = !run.saved
+    patchRun(id, { saved })
+    if (tokenRef.current) {
+      fetch(`${API_URL}/research/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tokenRef.current}` },
+        body: JSON.stringify({ saved }),
       }).catch(() => {})
     }
   }
 
-  const ask = async (asked) => {
+  const runResearch = async (asked) => {
     if (!asked.trim() || sending) return
+    const runId = activeId
 
-    const conversationId = activeId
-    applyMessages((prev) => [...prev, { role: 'user', content: asked }])
+    setRuns((prev) => [
+      {
+        id: runId,
+        question: asked,
+        title: deriveTitle(asked),
+        status: 'running',
+        saved: false,
+        detailLoaded: true,
+        pipeline: [],
+        answerMarkdown: null,
+        keyFindings: null,
+        citations: null,
+        review: null,
+        trace: null,
+        updatedAt: Date.now(),
+      },
+      ...prev,
+    ])
     setQuestion('')
     setError(null)
     setSending(true)
 
-    const assistantIndex = messages.length + 1
-    applyMessages((prev) => [
-      ...prev,
-      { role: 'assistant', content: '', steps: [], memoryRecall: null, trace: null, streaming: true },
-    ])
-
     const controller = new AbortController()
     controllerRef.current = controller
-    const timeoutMs = thinkLonger ? THINK_LONGER_TIMEOUT_MS : REQUEST_TIMEOUT_MS
-    const timeout = setTimeout(() => controller.abort(), timeoutMs)
-
-    const patchAssistant = (patch) => {
-      setConversations((prev) => {
-        const idx = prev.findIndex((c) => c.id === conversationId)
-        if (idx === -1) return prev
-        const msgs = [...prev[idx].messages]
-        if (!msgs[assistantIndex]) return prev
-        msgs[assistantIndex] = { ...msgs[assistantIndex], ...patch }
-        const next = [...prev]
-        next[idx] = { ...next[idx], messages: msgs, updatedAt: Date.now() }
-        return next
-      })
-    }
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
 
     try {
       const headers = { 'Content-Type': 'application/json' }
       if (tokenRef.current) headers.Authorization = `Bearer ${tokenRef.current}`
 
-      const res = await fetch(`${API_URL}/chat`, {
+      const res = await fetch(`${API_URL}/research/run`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ question: asked, think_longer: thinkLonger, session_id: conversationId }),
+        body: JSON.stringify({ question: asked, run_id: runId }),
         signal: controller.signal,
       })
       clearTimeout(timeout)
@@ -604,44 +746,30 @@ function App() {
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
-      const steps = []
-      let content = ''
-      let isError = false
-      let memoryRecall = null
-      let trace = null
+      let pipeline = []
+      let lastError = null
 
       const applyEvent = (event) => {
-        if (event.type === 'memory_recall') {
-          memoryRecall = { count: event.count, items: event.items }
-        } else if (event.type === 'tool_call') {
-          steps.push({ id: event.id ?? null, tool: event.tool, args: event.args, result: null, latencyMs: null })
-        } else if (event.type === 'tool_result') {
-          // Match by call id when available — the same tool can be called more
-          // than once in a single turn, so matching by name alone (with no id)
-          // can pair a result with the wrong step.
-          const step =
-            event.id != null
-              ? steps.find((s) => s.id === event.id)
-              : steps.find((s) => s.tool === event.tool && s.result == null)
-          if (step) {
-            step.result = event.result
-            step.latencyMs = event.latency_ms ?? null
-          }
-        } else if (event.type === 'answer') {
-          content = event.text
+        pipeline = reducePipelineEvent(pipeline, event)
+        if (event.type === 'synthesis_done') {
+          patchRun(runId, {
+            answerMarkdown: event.answer.answer_markdown,
+            keyFindings: event.answer.key_findings,
+            citations: event.answer.citations,
+          })
         } else if (event.type === 'trace_summary') {
-          trace = event
+          patchRun(runId, { trace: event.agents, status: 'done' })
         } else if (event.type === 'error') {
-          content = event.message
-          isError = true
+          lastError = event.message
+          patchRun(runId, { status: 'error', lastError: event.message })
         }
+        patchRun(runId, { pipeline })
       }
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
         buffer += decoder.decode(value, { stream: true })
-
         let newlineAt
         while ((newlineAt = buffer.indexOf('\n')) !== -1) {
           const line = buffer.slice(0, newlineAt)
@@ -653,37 +781,16 @@ function App() {
             // ignore malformed line
           }
         }
-
-        patchAssistant({ content, steps: [...steps], memoryRecall, trace, streaming: true, isError })
       }
 
-      patchAssistant({ streaming: false })
+      if (lastError) setError(lastError)
     } catch (err) {
       clearTimeout(timeout)
       if (err.name === 'AbortError') {
-        patchAssistant({ streaming: false })
-        setConversations((prev) => {
-          const idx = prev.findIndex((c) => c.id === conversationId)
-          if (idx === -1) return prev
-          const msgs = [...prev[idx].messages]
-          const current = msgs[assistantIndex]
-          if (current && !current.content) {
-            msgs[assistantIndex] = { ...current, content: '_Stopped._' }
-            const next = [...prev]
-            next[idx] = { ...next[idx], messages: msgs }
-            return next
-          }
-          return prev
-        })
+        patchRun(runId, { status: 'error', lastError: 'Stopped.' })
       } else {
-        setConversations((prev) => {
-          const idx = prev.findIndex((c) => c.id === conversationId)
-          if (idx === -1) return prev
-          const next = [...prev]
-          next[idx] = { ...next[idx], messages: next[idx].messages.slice(0, assistantIndex) }
-          return next
-        })
-        setError(`Could not get an answer: ${err.message}`)
+        patchRun(runId, { status: 'error', lastError: err.message })
+        setError(`Research run failed: ${err.message}`)
       }
     } finally {
       setSending(false)
@@ -691,19 +798,22 @@ function App() {
     }
   }
 
+  const stopGenerating = () => controllerRef.current?.abort()
+
   const handleAsk = (e) => {
     e.preventDefault()
-    ask(question)
+    runResearch(question)
   }
 
   const handleComposerKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      ask(question)
+      runResearch(question)
     }
   }
 
-  const conversationGroups = groupConversationsByDate(conversations)
+  const historyList = historyTab === 'saved' ? runs.filter((r) => r.saved) : runs
+  const groups = groupRunsByDate(historyList)
 
   return (
     <div className="app-shell">
@@ -713,13 +823,7 @@ function App() {
         <div className="bg-blob bg-blob-c" />
       </div>
 
-      <button
-        type="button"
-        className="sidebar-scrim"
-        aria-label="Close menu"
-        data-open={sidebarOpen}
-        onClick={() => setSidebarOpen(false)}
-      />
+      <button type="button" className="sidebar-scrim" aria-label="Close menu" data-open={sidebarOpen} onClick={() => setSidebarOpen(false)} />
 
       <aside className="sidebar" data-open={sidebarOpen}>
         <div className="topbar-brand">
@@ -727,33 +831,39 @@ function App() {
             <AssistantIcon />
           </div>
           <div className="topbar-titles">
-            <span className="topbar-title">AI Research Agent</span>
-            <span className="topbar-subtitle">Gemini · tools · memory</span>
+            <span className="topbar-title">AI Research Crew</span>
+            <span className="topbar-subtitle">planner · workers · reviewer</span>
           </div>
         </div>
 
-        <button type="button" className="new-chat-btn" onClick={startNewChat}>
+        <button type="button" className="new-chat-btn" onClick={startNewResearch}>
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M12 5v14M5 12h14" strokeLinecap="round" />
           </svg>
-          New chat
+          New Research
         </button>
 
+        <div className="history-tabs">
+          <button className={historyTab === 'history' ? 'active' : ''} onClick={() => setHistoryTab('history')}>
+            Research History
+          </button>
+          <button className={historyTab === 'saved' ? 'active' : ''} onClick={() => setHistoryTab('saved')}>
+            Saved Reports
+          </button>
+        </div>
+
         <div className="history-list">
-          {conversationGroups.length === 0 && <p className="history-empty">No chats yet</p>}
-          {conversationGroups.map((group) => (
+          {groups.length === 0 && <p className="history-empty">{historyTab === 'saved' ? 'No saved reports yet' : 'No research runs yet'}</p>}
+          {groups.map((group) => (
             <div key={group.label} className="history-group">
               <div className="sidebar-section-label">{group.label}</div>
-              {group.items.map((c) => (
-                <div key={c.id} className={`history-item ${c.id === activeId ? 'active' : ''}`}>
-                  <button className="history-item-btn" onClick={() => selectConversation(c.id)}>
-                    <span className="history-title">{c.title}</span>
+              {group.items.map((r) => (
+                <div key={r.id} className={`history-item ${r.id === activeId ? 'active' : ''}`}>
+                  <button className="history-item-btn" onClick={() => selectRun(r.id)}>
+                    <span className={`history-status-dot status-${r.status}`} />
+                    <span className="history-title">{r.title}</span>
                   </button>
-                  <button
-                    className="history-delete-btn"
-                    aria-label={`Delete "${c.title}"`}
-                    onClick={(e) => deleteConversation(c.id, e)}
-                  >
+                  <button className="history-delete-btn" aria-label={`Delete "${r.title}"`} onClick={(e) => deleteRun(r.id, e)}>
                     <TrashIcon />
                   </button>
                 </div>
@@ -778,7 +888,7 @@ function App() {
         onSignOut={signOut}
         googleButtonRef={googleButtonRef}
         onClearLocalHistory={clearLocalHistory}
-        localChatCount={conversations.length}
+        localRunCount={runs.length}
       />
 
       <main className="chat-column">
@@ -798,107 +908,91 @@ function App() {
         </header>
 
         <div className="chat" aria-live="polite">
-          {messages.length === 0 && (
+          {!activeRun && (
             <div className="empty-state">
               <div className="empty-badge">
                 <AssistantIcon />
               </div>
-              <h1>What do you want to know?</h1>
+              <h1>What do you want researched?</h1>
               <p>
-                Ask anything — it decides on its own whether to search the web,
-                run a calculation, or just answer, and shows every step live.
+                Ask a research question. A planner breaks it into sub-questions, workers research
+                them in parallel, a reviewer checks the findings, and a synthesizer writes the final
+                report — every step shown live.
               </p>
             </div>
           )}
-          {messages.map((m, i) => (
-            <div key={i} className={`msg-row ${m.role}`}>
-              <div className="msg-inner">
-                <div className={`avatar ${m.role}`}>{m.role === 'user' ? <UserIcon /> : <AssistantIcon />}</div>
-                <div className={`msg-body ${m.isError ? 'is-error' : ''}`}>
-                  {m.role === 'assistant' && <MemoryRecall recall={m.memoryRecall} />}
-                  {m.steps && m.steps.length > 0 && (
-                    <div className="steps">
-                      {m.steps.map((s, idx) => (
-                        <Step key={idx} step={s} />
-                      ))}
-                    </div>
-                  )}
-                  {m.content ? (
-                    m.role === 'assistant' ? (
-                      <ReactMarkdown>{m.content}</ReactMarkdown>
-                    ) : (
-                      <p>{m.content}</p>
-                    )
-                  ) : (
-                    (!m.steps || m.steps.length === 0) && (
-                      <span className="typing">
-                        <span />
-                        <span />
-                        <span />
-                      </span>
-                    )
-                  )}
-                  {m.role === 'assistant' && !m.streaming && <TraceSummary trace={m.trace} />}
-                </div>
-              </div>
+
+          {activeRun && (
+            <div className="research-view">
+              <h1 className="research-question">{activeRun.question}</h1>
+              <PipelineTimeline rows={activeRun.pipeline} />
+              {activeRun.status === 'error' && activeRun.lastError && (
+                <p className="error research-error">{activeRun.lastError}</p>
+              )}
+              {activeRun.answerMarkdown && <ResearchReport run={activeRun} onToggleSaved={() => toggleSaved(activeRun.id)} />}
             </div>
-          ))}
-          <div ref={chatEndRef} />
+          )}
+          <div ref={scrollEndRef} />
         </div>
 
-        <div className="composer-area">
-          {error && <p className="error">{error}</p>}
-          <form onSubmit={handleAsk} className="composer">
-            <div className="composer-toolbar">
-              <button
-                type="button"
-                className={`think-toggle ${thinkLonger ? 'active' : ''}`}
-                onClick={() => setThinkLonger((v) => !v)}
-                aria-pressed={thinkLonger}
-                title="Spend more reasoning effort for a more thorough answer"
-              >
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M12 2a7 7 0 0 0-4 12.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3A7 7 0 0 0 12 2Z" />
-                  <path d="M9 21h6" strokeLinecap="round" />
-                </svg>
-                Think longer
-              </button>
-            </div>
-            <div className="composer-input-row">
-              <textarea
-                ref={textareaRef}
-                placeholder="Ask anything…"
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                onKeyDown={handleComposerKeyDown}
-                disabled={sending}
-                rows={1}
-              />
-              {sending ? (
-                <button type="button" className="composer-btn stop-btn" onClick={stopGenerating} aria-label="Stop">
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-                    <rect x="6" y="6" width="12" height="12" rx="2" />
-                  </svg>
-                </button>
-              ) : (
-                <button
-                  type="submit"
-                  className="composer-btn send-btn"
-                  disabled={!question.trim()}
-                  aria-label="Send"
-                >
+        {!activeRun && (
+          <div className="composer-area">
+            {error && <p className="error">{error}</p>}
+            <form onSubmit={handleAsk} className="composer">
+              <div className="composer-input-row">
+                <textarea
+                  placeholder="Ask a research question…"
+                  value={question}
+                  onChange={(e) => setQuestion(e.target.value)}
+                  onKeyDown={handleComposerKeyDown}
+                  disabled={sending}
+                  rows={2}
+                />
+                <button type="submit" className="composer-btn send-btn" disabled={!question.trim()} aria-label="Research">
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2.4">
                     <path d="M12 19V5M5 12l7-7 7 7" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </button>
-              )}
-            </div>
-          </form>
-          <p className="composer-hint">Enter to send · Shift+Enter for a new line</p>
-        </div>
+              </div>
+            </form>
+            <p className="composer-hint">Enter to research · Shift+Enter for a new line</p>
+          </div>
+        )}
+
+        {activeRun && activeRun.status === 'running' && (
+          <div className="composer-area">
+            <button type="button" className="stop-research-btn" onClick={stopGenerating}>
+              Stop
+            </button>
+          </div>
+        )}
       </main>
     </div>
   )
+}
+
+/** Rebuilds pipeline rows from a persisted trace (server history detail) so
+ * a past run looks the same as a live one, just fully "done" already. */
+function tracePipelineRows(trace) {
+  if (!trace) return []
+  return trace.map((entry) => {
+    const isWorker = entry.name.startsWith('worker_')
+    const isReviewer = entry.name.startsWith('reviewer')
+    const isSynth = entry.name === 'synthesizer'
+    const label = isWorker ? `WORKER ${entry.name.replace('worker_', '')}` : isReviewer ? 'REVIEWER' : isSynth ? 'SYNTHESIZER' : 'PLANNER'
+    return {
+      id: entry.name,
+      kind: isWorker ? 'worker' : isReviewer ? 'reviewer' : isSynth ? 'synthesizer' : 'planner',
+      label,
+      topic: entry.topic,
+      status: entry.failed ? 'failed' : 'done',
+      detail: entry.failed
+        ? 'Failed — continuing with partial results'
+        : isWorker
+          ? `${entry.sources_found ?? 0} sources collected`
+          : `${((entry.duration_ms || 0) / 1000).toFixed(1)}s`,
+    }
+  })
 }
 
 export default App

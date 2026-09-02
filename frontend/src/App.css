@@ -1107,3 +1107,370 @@
 .about-list strong {
   color: var(--text-h);
 }
+
+/* History tabs (Research History / Saved Reports) */
+.history-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  margin: 10px 0 2px;
+  border-radius: 10px;
+  background: var(--code-bg);
+}
+
+.history-tabs button {
+  flex: 1;
+  padding: 6px 4px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.history-tabs button.active {
+  background: var(--bg);
+  color: var(--text-h);
+  box-shadow: var(--shadow);
+}
+
+.history-status-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-right: 8px;
+  background: var(--text);
+  opacity: 0.35;
+}
+
+.history-status-dot.status-running {
+  background: var(--accent);
+  opacity: 1;
+  animation: pulse 1s infinite ease-in-out;
+}
+
+.history-status-dot.status-done {
+  background: #4ade80;
+  opacity: 1;
+}
+
+.history-status-dot.status-error {
+  background: #ff6b6b;
+  opacity: 1;
+}
+
+/* Research view */
+.research-view {
+  max-width: 720px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 20px 16px 32px;
+}
+
+.research-question {
+  font-size: 1.4rem;
+  line-height: 1.35;
+  letter-spacing: -0.3px;
+  margin: 0 0 18px;
+  color: var(--text-h);
+}
+
+.research-error {
+  margin: 12px 0;
+}
+
+.stop-research-btn {
+  display: block;
+  margin: 0 auto;
+  padding: 8px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-h);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.stop-research-btn:hover {
+  border-color: #ff6b6b;
+  color: #ff6b6b;
+}
+
+/* Pipeline timeline */
+.pipeline {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 20px;
+}
+
+.pipeline-row {
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.pipeline-row.status-running {
+  border-color: var(--accent-border);
+}
+
+.pipeline-row-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.82rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pipeline-row-head:disabled {
+  cursor: default;
+}
+
+.pipeline-glyph {
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+  font-family: var(--mono);
+}
+
+.glyph-waiting {
+  opacity: 0.4;
+}
+
+.glyph-running {
+  color: var(--accent);
+  animation: pulse 1s infinite ease-in-out;
+}
+
+.glyph-done {
+  color: #4ade80;
+}
+
+.glyph-failed {
+  color: #ff6b6b;
+}
+
+.pipeline-label {
+  flex-shrink: 0;
+  font-weight: 700;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: var(--text-h);
+}
+
+.pipeline-topic {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.75;
+}
+
+.pipeline-detail {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 0.76rem;
+  opacity: 0.65;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pipeline-expand {
+  padding: 4px 14px 12px 38px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text);
+  border-top: 1px solid var(--border);
+}
+
+.pipeline-expand p {
+  margin: 6px 0;
+}
+
+.pipeline-limitations {
+  opacity: 0.7;
+  font-style: italic;
+}
+
+/* Research report */
+.research-report {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.report-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.research-report h2 {
+  font-size: 1.15rem;
+  margin: 0;
+}
+
+.research-report h3 {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-h);
+  margin: 20px 0 8px;
+}
+
+.bookmark-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.bookmark-btn:hover {
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.bookmark-btn.active {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.report-answer {
+  font-size: 0.92rem;
+  line-height: 1.65;
+  color: var(--text-h);
+}
+
+.report-answer p {
+  margin: 10px 0;
+}
+
+.report-answer code {
+  background: var(--code-bg);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.85em;
+}
+
+.report-answer pre {
+  background: var(--code-bg);
+  padding: 10px 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+.key-findings {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+.key-findings li {
+  margin: 4px 0;
+}
+
+.source-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.source-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  text-decoration: none;
+  overflow: hidden;
+}
+
+.source-card:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+}
+
+.source-domain {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.source-url {
+  font-size: 0.7rem;
+  font-family: var(--mono);
+  color: var(--text);
+  opacity: 0.65;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quality-review {
+  margin-top: 20px;
+}
+
+.quality-review ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.quality-review li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+.quality-glyph {
+  font-family: var(--mono);
+  font-weight: 700;
+}
+
+.quality-review li.ok .quality-glyph {
+  color: #4ade80;
+}
+
+.quality-review li.warn .quality-glyph {
+  color: #f5a623;
+}
+
+.quality-gap {
+  opacity: 0.65;
+  font-size: 0.8rem;
+}
+
+@media (max-width: 880px) {
+  .research-view {
+    max-width: 100%;
+  }
+}

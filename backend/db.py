@@ -1,12 +1,12 @@
-"""The app's relational storage: users, login sessions, conversations, and
-their messages. One SQLite file, stdlib sqlite3 only — same reasoning as
-memory.py: this is a demo-scale project, and a real database server would
-be solving a scale problem this project doesn't have.
+"""The app's relational storage: users, login sessions, and (for signed-in
+users only) research run history. One SQLite file, stdlib sqlite3 only —
+a demo-scale project doesn't need a database server.
 
-Conversation persistence is opt-in: the app works fully anonymously with
-the frontend keeping history in localStorage (see App.jsx). Signing in
-with Google upgrades a user to server-side, cross-device history — these
-functions are what that upgrade path writes to and reads from.
+Research history is opt-in, same as the chat history this replaced: the
+app works fully anonymously with the frontend keeping run results in
+localStorage (see App.jsx). Signing in with Google upgrades a user to
+server-side, cross-device history — these functions are what that
+upgrade path writes to and reads from.
 """
 
 import json
@@ -55,24 +55,31 @@ def init_db() -> None:
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
-            CREATE TABLE IF NOT EXISTS conversations (
+            CREATE TABLE IF NOT EXISTS research_runs (
                 id TEXT PRIMARY KEY,
                 user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                title TEXT NOT NULL,
+                question TEXT NOT NULL,
+                status TEXT NOT NULL,
+                saved INTEGER NOT NULL DEFAULT 0,
+                final_answer TEXT,
+                key_findings TEXT,
+                sources TEXT,
+                review TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
-            CREATE TABLE IF NOT EXISTS messages (
+            CREATE TABLE IF NOT EXISTS research_events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-                role TEXT NOT NULL,
-                content TEXT NOT NULL,
-                payload TEXT,
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                run_id TEXT NOT NULL REFERENCES research_runs(id) ON DELETE CASCADE,
+                seq INTEGER NOT NULL,
+                agent_name TEXT NOT NULL,
+                duration_ms INTEGER,
+                extra TEXT
             );
 
-            CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations(user_id);
-            CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
+            CREATE INDEX IF NOT EXISTS idx_research_runs_user ON research_runs(user_id);
+            CREATE INDEX IF NOT EXISTS idx_research_events_run ON research_events(run_id);
             """
         )
         conn.commit()
@@ -121,66 +128,106 @@ def delete_session(token: str) -> None:
         conn.commit()
 
 
-# --- conversations / messages ------------------------------------------
+# --- research runs -------------------------------------------------------
 
-def list_conversations(user_id: int) -> list[sqlite3.Row]:
+def save_research_run(
+    user_id: int,
+    run_id: str,
+    question: str,
+    status: str,
+    final_answer: str | None,
+    key_findings: list[str] | None,
+    sources: list[str] | None,
+    review: dict | None,
+    trace: list[dict],
+) -> None:
+    """Upserts one research run and (re)writes its trace/event rows.
+    Called once, after the run finishes (successfully or with an error) —
+    a run isn't visible in history until it's done."""
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO research_runs (id, user_id, question, status, final_answer, key_findings, sources, review)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET status = excluded.status, final_answer = excluded.final_answer,
+                key_findings = excluded.key_findings, sources = excluded.sources, review = excluded.review,
+                updated_at = datetime('now')
+            """,
+            (
+                run_id,
+                user_id,
+                question,
+                status,
+                json.dumps(final_answer) if final_answer is not None else None,
+                json.dumps(key_findings) if key_findings is not None else None,
+                json.dumps(sources) if sources is not None else None,
+                json.dumps(review) if review is not None else None,
+            ),
+        )
+        conn.execute("DELETE FROM research_events WHERE run_id = ?", (run_id,))
+        for seq, entry in enumerate(trace):
+            extra = {k: v for k, v in entry.items() if k not in ("name", "duration_ms")}
+            conn.execute(
+                "INSERT INTO research_events (run_id, seq, agent_name, duration_ms, extra) VALUES (?, ?, ?, ?, ?)",
+                (run_id, seq, entry.get("name", "unknown"), entry.get("duration_ms"), json.dumps(extra)),
+            )
+        conn.commit()
+
+
+def list_research_runs(user_id: int) -> list[sqlite3.Row]:
     with _connect() as conn:
         return conn.execute(
-            "SELECT id, title, updated_at FROM conversations WHERE user_id = ? ORDER BY updated_at DESC",
+            "SELECT id, question, status, saved, created_at, updated_at FROM research_runs "
+            "WHERE user_id = ? ORDER BY updated_at DESC",
             (user_id,),
         ).fetchall()
 
 
-def get_conversation_messages(user_id: int, conversation_id: str) -> list[dict] | None:
-    """Returns None if the conversation doesn't exist or isn't owned by user_id."""
+def get_research_run(user_id: int, run_id: str) -> dict | None:
     with _connect() as conn:
-        owner = conn.execute(
-            "SELECT user_id FROM conversations WHERE id = ?", (conversation_id,)
+        row = conn.execute(
+            "SELECT * FROM research_runs WHERE id = ? AND user_id = ?", (run_id, user_id)
         ).fetchone()
-        if owner is None or owner["user_id"] != user_id:
+        if row is None:
             return None
-        rows = conn.execute(
-            "SELECT role, content, payload FROM messages WHERE conversation_id = ? ORDER BY id ASC",
-            (conversation_id,),
+        events = conn.execute(
+            "SELECT agent_name, duration_ms, extra FROM research_events WHERE run_id = ? ORDER BY seq ASC",
+            (run_id,),
         ).fetchall()
-    messages = []
-    for row in rows:
-        msg = {"role": row["role"], "content": row["content"]}
-        if row["payload"]:
-            msg.update(json.loads(row["payload"]))
-        messages.append(msg)
-    return messages
+    return {
+        "id": row["id"],
+        "question": row["question"],
+        "status": row["status"],
+        "saved": bool(row["saved"]),
+        "final_answer": json.loads(row["final_answer"]) if row["final_answer"] else None,
+        "key_findings": json.loads(row["key_findings"]) if row["key_findings"] else None,
+        "sources": json.loads(row["sources"]) if row["sources"] else None,
+        "review": json.loads(row["review"]) if row["review"] else None,
+        "trace": [
+            {"name": e["agent_name"], "duration_ms": e["duration_ms"], **json.loads(e["extra"] or "{}")}
+            for e in events
+        ],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
 
 
-def save_message(user_id: int, conversation_id: str, title: str, role: str, content: str, extra: dict | None = None) -> None:
-    """Upserts the parent conversation (creating it on the first message,
-    touching updated_at + title otherwise) and appends one message row."""
+def set_research_run_saved(user_id: int, run_id: str, saved: bool) -> bool:
     with _connect() as conn:
-        exists = conn.execute("SELECT 1 FROM conversations WHERE id = ?", (conversation_id,)).fetchone()
-        if exists:
-            conn.execute(
-                "UPDATE conversations SET updated_at = datetime('now') WHERE id = ?", (conversation_id,)
-            )
-        else:
-            conn.execute(
-                "INSERT INTO conversations (id, user_id, title) VALUES (?, ?, ?)",
-                (conversation_id, user_id, title),
-            )
-        conn.execute(
-            "INSERT INTO messages (conversation_id, role, content, payload) VALUES (?, ?, ?, ?)",
-            (conversation_id, role, content, json.dumps(extra) if extra else None),
-        )
-        conn.commit()
-
-
-def delete_conversation(user_id: int, conversation_id: str) -> bool:
-    with _connect() as conn:
-        owner = conn.execute(
-            "SELECT user_id FROM conversations WHERE id = ?", (conversation_id,)
-        ).fetchone()
+        owner = conn.execute("SELECT user_id FROM research_runs WHERE id = ?", (run_id,)).fetchone()
         if owner is None or owner["user_id"] != user_id:
             return False
-        conn.execute("DELETE FROM conversations WHERE id = ?", (conversation_id,))
+        conn.execute("UPDATE research_runs SET saved = ? WHERE id = ?", (1 if saved else 0, run_id))
+        conn.commit()
+        return True
+
+
+def delete_research_run(user_id: int, run_id: str) -> bool:
+    with _connect() as conn:
+        owner = conn.execute("SELECT user_id FROM research_runs WHERE id = ?", (run_id,)).fetchone()
+        if owner is None or owner["user_id"] != user_id:
+            return False
+        conn.execute("DELETE FROM research_runs WHERE id = ?", (run_id,))
         conn.commit()
         return True
 

@@ -1,16 +1,17 @@
-"""
-AI Research Agent API.
+"""AI Research Crew API.
 
-A single /chat endpoint where Gemini decides which tools to call — web
-search, a calculator, current date/time — we execute them locally, and
-the model uses the results to answer. A real agent loop (see agent.py),
-not a single LLM call with no way to look anything up.
+One endpoint, /research, runs the multi-agent pipeline (see
+research/orchestrator.py: Planner -> parallel Workers -> Reviewer,
+looping back to Workers if the Reviewer flags real gaps -> Synthesizer)
+and streams every step as a newline-delimited JSON event so the frontend
+can render a live pipeline instead of a single opaque wait.
 
-Sign-in is optional and additive: /chat works the same with or without an
-Authorization header. Anonymous use keeps its history in the browser
-(App.jsx, localStorage). A signed-in request also gets its exchange
-persisted server-side (db.py) so history survives across devices/browsers
-— see auth.py for how a Google ID token becomes our own session token.
+Sign-in is optional and additive: /research works the same with or
+without an Authorization header. Anonymous use keeps history in the
+browser (App.jsx, localStorage). A signed-in request also gets the
+finished run persisted server-side (db.py) so history survives across
+devices/browsers — see auth.py for how a Google ID token becomes our own
+session token.
 
 Run with:
     uvicorn main:app --reload
@@ -19,18 +20,19 @@ Run with:
 import json
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Body, Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-import agent
 import auth
 import db
+import llm
+from research.orchestrator import run_research
 
 load_dotenv()
 
-app = FastAPI(title="AI Research Agent API")
+app = FastAPI(title="AI Research Crew API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -45,10 +47,9 @@ app.add_middleware(
 )
 
 
-class ChatRequest(BaseModel):
+class ResearchRequest(BaseModel):
     question: str
-    think_longer: bool = False
-    session_id: str = "anonymous"
+    run_id: str
 
 
 class GoogleAuthRequest(BaseModel):
@@ -96,85 +97,80 @@ def me(user=Depends(auth.require_user)):
     return _user_dict(user)
 
 
-# --- server-persisted history (signed-in users only) ---------------------
+# --- research history (signed-in users only) ------------------------------
 
 
-@app.get("/conversations")
-def conversations(user=Depends(auth.require_user)):
-    rows = db.list_conversations(user["id"])
-    return [{"id": r["id"], "title": r["title"], "updated_at": r["updated_at"]} for r in rows]
+@app.get("/research")
+def list_research(user=Depends(auth.require_user)):
+    rows = db.list_research_runs(user["id"])
+    return [
+        {
+            "id": r["id"],
+            "question": r["question"],
+            "status": r["status"],
+            "saved": bool(r["saved"]),
+            "updated_at": r["updated_at"],
+        }
+        for r in rows
+    ]
 
 
-@app.get("/conversations/{conversation_id}")
-def conversation_detail(conversation_id: str, user=Depends(auth.require_user)):
-    messages = db.get_conversation_messages(user["id"], conversation_id)
-    if messages is None:
-        raise HTTPException(status_code=404, detail="Conversation not found")
-    return {"id": conversation_id, "messages": messages}
+@app.get("/research/{run_id}")
+def research_detail(run_id: str, user=Depends(auth.require_user)):
+    run = db.get_research_run(user["id"], run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Research run not found")
+    return run
 
 
-@app.delete("/conversations/{conversation_id}")
-def delete_conversation(conversation_id: str, user=Depends(auth.require_user)):
-    if not db.delete_conversation(user["id"], conversation_id):
-        raise HTTPException(status_code=404, detail="Conversation not found")
+@app.patch("/research/{run_id}")
+def update_research(run_id: str, saved: bool = Body(embed=True), user=Depends(auth.require_user)):
+    if not db.set_research_run_saved(user["id"], run_id, saved):
+        raise HTTPException(status_code=404, detail="Research run not found")
     return {"ok": True}
 
 
-# --- chat -----------------------------------------------------------------
+@app.delete("/research/{run_id}")
+def delete_research(run_id: str, user=Depends(auth.require_user)):
+    if not db.delete_research_run(user["id"], run_id):
+        raise HTTPException(status_code=404, detail="Research run not found")
+    return {"ok": True}
 
 
-@app.post("/chat")
-async def chat(req: ChatRequest, authorization: str | None = Header(default=None)):
+# --- research pipeline -----------------------------------------------------
+
+
+@app.post("/research/run")
+async def research(req: ResearchRequest, authorization: str | None = Header(default=None)):
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty")
-    if agent.client is None:
+    if llm.client is None:
         raise HTTPException(status_code=500, detail="GEMINI_API_KEY is not configured on the server")
 
     user = auth.get_current_user(authorization)
 
     async def event_stream():
-        steps, content, memory_recall, trace, is_error = [], "", None, None, False
+        final_answer, key_findings, sources, review, trace, status = None, None, None, None, [], "running"
 
-        async for event in agent.run_agent(
-            req.question, think_longer=req.think_longer, session_id=req.session_id
-        ):
-            if event["type"] == "tool_call":
-                steps.append(
-                    {"id": event.get("id"), "tool": event["tool"], "args": event["args"], "result": None, "latencyMs": None}
-                )
-            elif event["type"] == "tool_result":
-                # Match by call id when available — falls back to name+order only
-                # for an id-less call, since the same tool can appear more than
-                # once in a turn and matching by name alone would pick the wrong one.
-                if event.get("id") is not None:
-                    step = next((s for s in steps if s["id"] == event["id"]), None)
-                else:
-                    step = next((s for s in steps if s["tool"] == event["tool"] and s["result"] is None), None)
-                if step:
-                    step["result"] = event["result"]
-                    step["latencyMs"] = event.get("latency_ms")
-            elif event["type"] == "memory_recall":
-                memory_recall = {"count": event["count"], "items": event["items"]}
-            elif event["type"] == "answer":
-                content = event["text"]
-            elif event["type"] == "trace_summary":
-                trace = event
-            elif event["type"] == "error":
-                content, is_error = event["message"], True
+        async for event in run_research(req.question):
+            etype = event["type"]
+            if etype == "synthesis_done":
+                final_answer = event["answer"].get("answer_markdown")
+                key_findings = event["answer"].get("key_findings")
+                sources = event["answer"].get("citations")
+            elif etype == "review_done":
+                review = event["review"]
+            elif etype == "trace_summary":
+                trace = event["agents"]
+                status = "done"
+            elif etype == "error":
+                status = "error"
 
             yield json.dumps(event) + "\n"
 
-        if user is not None and content:
-            title = req.question.strip().replace("\n", " ")
-            title = title[:44] + "…" if len(title) > 44 else title
-            db.save_message(user["id"], req.session_id, title, "user", req.question)
-            db.save_message(
-                user["id"],
-                req.session_id,
-                title,
-                "assistant",
-                content,
-                extra={"steps": steps, "memoryRecall": memory_recall, "trace": trace, "isError": is_error},
+        if user is not None:
+            db.save_research_run(
+                user["id"], req.run_id, req.question, status, final_answer, key_findings, sources, review, trace
             )
 
     return StreamingResponse(event_stream(), media_type="text/plain")

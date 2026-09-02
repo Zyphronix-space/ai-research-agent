@@ -4,3 +4,9 @@ google-genai
 google-auth
 python-dotenv
 ddgs
+pydantic
+requests
+beautifulsoup4
+pytest
+pytest-asyncio
+httpx
