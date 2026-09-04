@@ -1,5 +1,7 @@
 # AI Research Crew
 
+**Live demo:** https://delightful-desert-0af6ccc00.7.azurestaticapps.net
+
 Ask it a research question. A **Planner** breaks it into sub-questions, a set of
 **Worker** agents research them *concurrently* (real web search + page fetches,
 not scripted), a **Reviewer** checks the findings for gaps and contradictions
