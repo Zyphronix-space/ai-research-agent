@@ -9,11 +9,9 @@ genuine multi-agent orchestration with planning, tool use, and reflection, not
 a single "call the LLM once" wrapper.
 
 > This project started as a single-agent tool-calling chatbot (see git
-> history) and was rebuilt into this multi-agent pipeline. The Azure/Vercel
-> deployment described under [Deployment](#deployment) currently still serves
-> the older single-agent version — redeploying this version is a follow-up
-> step, not something this session did (see
-> [Known limitations](#known-limitations)).
+> history) and was rebuilt into this multi-agent pipeline. The live
+> deployment described under [Deployment](#deployment) now serves this
+> multi-agent version.
 
 Three things separate this from a basic multi-agent demo:
 
@@ -253,15 +251,20 @@ counts, reviewer/synthesizer waiting their turn:
 
 ## Deployment
 
-Unchanged from the project's original setup — this session focused on
-functionality, not redeploying (see the note at the top of this README):
+Live at:
+- **Frontend** — https://delightful-desert-0af6ccc00.7.azurestaticapps.net
+- **Backend** — https://ai-research-agent-backend.azurewebsites.net
 
 - **Frontend** — Azure Static Web Apps (Free tier), built with Vite
   (`VITE_API_URL` pointed at the backend) and pushed with the Static Web
-  Apps CLI.
+  Apps CLI (`swa deploy ./frontend/dist --deployment-token <token> --env
+  production`, run from the repo root — the CLI refuses to run from inside
+  the app-location folder).
 - **Backend** — Azure App Service (Linux, B1, Python 3.12) via `az webapp
-  up` (Oryx builds from `requirements.txt`). Startup command:
-  `uvicorn main:app --host 0.0.0.0 --port 8000`.
+  deploy --type zip` (a zip built with Python's `zipfile`, not PowerShell's
+  `Compress-Archive`, which writes backslash path separators that break
+  subdirectory imports on Linux — see `research/` needing to survive the
+  zip). Startup command: `uvicorn main:app --host 0.0.0.0 --port 8000`.
 - **Why App Service instead of Container Apps** (which `Dockerfile`/CI still
   target) — this subscription is an Azure for Students grant, and Azure
   Container Registry's remote build is disabled on that tier.
