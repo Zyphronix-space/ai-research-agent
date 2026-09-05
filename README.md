@@ -1,5 +1,7 @@
 # ResearchOS
 
+**Live demo:** https://delightful-desert-0af6ccc00.7.azurestaticapps.net
+
 A multi-agent AI research workspace: ask a question, watch a **Planner**,
 **Researchers**, a **Tool Agent**, a **Reviewer**, and a **Writer** turn it into a
 cited report — live, with projects, saved sources, research history, and an
