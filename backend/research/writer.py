@@ -1,5 +1,8 @@
-"""Synthesizer: turns approved findings into the final answer the user
-reads — organized, cited, honest about uncertainty."""
+"""Writer agent: turns approved findings into the final report the user
+reads — organized, cited, honest about uncertainty. Also exposes
+regenerate(), used to rewrite a report from a run's already-persisted
+findings without rerunning the whole pipeline (the "Regenerate report"
+control)."""
 
 import json
 
@@ -7,7 +10,7 @@ from llm import generate_structured
 from research.schemas import FinalAnswer, ResearchPlan, ReviewResult, WorkerFinding
 
 SYSTEM_PROMPT = (
-    "Write the final research answer from the findings below. Directly "
+    "Write the final research report from the findings below. Directly "
     "answer the original question, organize the information clearly "
     "(markdown headings/lists are fine), and cite sources inline where "
     "you state a fact from them. Distinguish established facts from "
@@ -19,7 +22,7 @@ SYSTEM_PROMPT = (
 )
 
 
-async def synthesize(
+async def write(
     question: str, plan: ResearchPlan, findings: list[WorkerFinding], review: ReviewResult
 ) -> FinalAnswer:
     prompt = (

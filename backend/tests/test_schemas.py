@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from research.schemas import FinalAnswer, ResearchPlan, ReviewResult, SubQuestion, WorkerFinding
+from research.schemas import FinalAnswer, ResearchPlan, ReviewResult, SourceItem, SubQuestion, WorkerFinding
 
 
 def test_research_plan_requires_sub_questions_list():
@@ -25,8 +25,19 @@ def test_worker_finding_defaults_are_empty_not_missing():
     assert finding.failed is False
 
 
+def test_worker_finding_sources_are_structured_not_bare_urls():
+    finding = WorkerFinding(task="t", sources=[SourceItem(title="Example", url="https://x.test")])
+    assert finding.sources[0].title == "Example"
+    assert finding.sources[0].url == "https://x.test"
+
+
+def test_worker_finding_rejects_bare_url_source():
+    with pytest.raises(ValidationError):
+        WorkerFinding(task="t", sources=["https://x.test"])
+
+
 def test_worker_finding_failed_flag():
-    finding = WorkerFinding(task="t", confidence="none", failed=True, limitations=["Worker failed: boom"])
+    finding = WorkerFinding(task="t", confidence="none", failed=True, limitations=["Researcher failed: boom"])
     assert finding.failed is True
 
 

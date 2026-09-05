@@ -1,14 +1,15 @@
-"""Tools available to Worker agents: the existing web_search/get_current_datetime
-(reused unchanged from the top-level tools.py — calculator is dropped, it
-has no role in research), plus fetch_url, a genuine second tool so a
-worker can read a full source instead of a search-result snippet.
+"""Tools available to Researcher agents (executed on their behalf by the
+Tool Agent step of the pipeline): web_search/calculator/get_current_datetime
+reused unchanged from the top-level tools.py, plus fetch_url, a genuine
+second research tool so a researcher can read a full source instead of a
+search-result snippet.
 """
 
 import requests
 from bs4 import BeautifulSoup
 from google.genai import types
 
-from tools import get_current_datetime, web_search
+from tools import calculator, get_current_datetime, web_search
 
 FETCH_URL_TIMEOUT_S = 8
 FETCH_URL_MAX_CHARS = 4000
@@ -36,6 +37,7 @@ TOOL_FUNCTIONS = {
     "web_search": web_search,
     "fetch_url": fetch_url,
     "get_current_datetime": get_current_datetime,
+    "calculator": calculator,
 }
 
 TOOL_DECLARATIONS = [
@@ -63,6 +65,16 @@ TOOL_DECLARATIONS = [
                 name="get_current_datetime",
                 description="Get the current date and time in UTC.",
                 parameters=types.Schema(type="OBJECT", properties={}),
+            ),
+            types.FunctionDeclaration(
+                name="calculator",
+                description="Evaluate an arithmetic expression — use for any numeric comparison or "
+                "calculation a sub-question needs (e.g. cost differences, growth rates).",
+                parameters=types.Schema(
+                    type="OBJECT",
+                    properties={"expression": types.Schema(type="STRING", description="e.g. '(120-99)/99*100'")},
+                    required=["expression"],
+                ),
             ),
         ]
     )

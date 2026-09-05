@@ -1,5 +1,5 @@
 {
-  "name": "frontend",
+  "name": "researchos-frontend",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -12,7 +12,8 @@
   "dependencies": {
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-markdown": "^10.1.0"
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^6.30.6"
   },
   "devDependencies": {
     "@types/react": "^19.2.18",

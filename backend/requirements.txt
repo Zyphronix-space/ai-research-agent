@@ -7,6 +7,7 @@ ddgs
 pydantic
 requests
 beautifulsoup4
+bcrypt
 pytest
 pytest-asyncio
 httpx
