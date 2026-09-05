@@ -251,6 +251,12 @@ counts, reviewer/synthesizer waiting their turn:
 
 ![Pipeline running](docs/screenshots/pipeline-running.png)
 
+A completed run — the reviewer requested a second round of research, two
+follow-up workers failed but the synthesizer still produced a full report
+from partial results, with citations and a step/timing summary:
+
+![Final report](docs/screenshots/final-report.png)
+
 ## Deployment
 
 Live at:
