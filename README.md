@@ -19,33 +19,28 @@ sessions, sources, reports), full auth, and a "Liquid Glass" UI.
 
 ## Architecture
 
+```mermaid
+flowchart TD
+    Q["Question"] --> P["Planner<br/>1–7 independent sub-questions<br/>(count scales with depth)"]
+    P --> R1["Researcher 1"]
+    P --> R2["Researcher 2"]
+    P --> R3["Researcher N"]
+    R1 --> T["Tool Agent<br/>web_search · fetch_url · calculator · get_current_datetime"]
+    R2 --> T
+    R3 --> T
+    T --> EP["Evidence Pool<br/>findings merged as they complete"]
+    EP --> Rev{"Reviewer<br/>unsupported claims? contradictions?<br/>weak/duplicate sources? gaps?"}
+    Rev -- "gaps found, within cap" --> RG["Researchers on flagged gaps only"]
+    RG --> EP
+    Rev -- "approved, or cap reached" --> W["Writer<br/>executive summary, key findings,<br/>detailed analysis, limitations, sources"]
+    W --> F["Final Research Report"]
 ```
-Question
-  │
-  ▼
-PLANNER            — structured plan: 1-7 independent sub-questions (count scales with depth)
-  │
-  ▼
-RESEARCHERS (parallel) — each: tool-calling loop → structured finding
-  │        │
-  │        ▼
-  │   TOOL AGENT   — web_search / fetch_url / calculator / get_current_datetime,
-  │                  executed on the researcher's behalf, shown as its own pipeline stage
-  ▼
-EVIDENCE POOL       — findings merged as they complete
-  │
-  ▼
-REVIEWER            — unsupported claims? contradictions? weak/duplicate sources? gaps?
-  │
-  ├── needs more research (bounded) ──► RESEARCHERS on the flagged gaps only ──┐
-  │                                                                             │
-  │◄────────────────────────────────────────────────────────────────────────────┘
-  ▼ approved (or cap reached)
-WRITER              — final report: executive summary, key findings, detailed analysis,
-  │                    limitations, sources
-  ▼
-Final Research Report
-```
+
+Every box above is a real pipeline stage, not illustrative — the Planner and
+Writer are `response_schema`-constrained Gemini calls, Researchers run
+concurrently via `asyncio.gather`, and the Reviewer's "gaps found" branch is
+a genuine bounded loop (`MAX_REVIEW_ITERATIONS`, depth-dependent), not a
+diagram simplification of a single pass.
 
 - **`backend/llm.py`** — the one shared Gemini client every agent uses:
   `generate_structured` (a single call constrained to a Pydantic
