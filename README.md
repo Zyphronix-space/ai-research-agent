@@ -1,5 +1,10 @@
 # AI Research Crew
 
+![Python](https://img.shields.io/badge/-Python-black?style=flat-square&logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/-FastAPI-black?style=flat-square&logo=fastapi&logoColor=white)
+![Gemini](https://img.shields.io/badge/-Gemini%20API-black?style=flat-square&logo=googlegemini&logoColor=white)
+![React](https://img.shields.io/badge/-React-black?style=flat-square&logo=react&logoColor=white)
+
 **Live demo:** https://delightful-desert-0af6ccc00.7.azurestaticapps.net
 
 Ask it a research question. A **Planner** breaks it into sub-questions, a set of
@@ -34,30 +39,29 @@ Three things separate this from a basic multi-agent demo:
 
 ## Architecture
 
+```mermaid
+flowchart TD
+    Q["POST /research/run<br/>(question)"] --> P["Planner<br/>2–5 independent sub-questions"]
+    P --> W1["Worker"]
+    P --> W2["Worker"]
+    P --> W3["Worker …"]
+    W1 -- "web_search / fetch_url" --> EP["Evidence Pool<br/>(asyncio.Queue fan-in)"]
+    W2 -- "web_search / fetch_url" --> EP
+    W3 -- "web_search / fetch_url" --> EP
+    EP --> R{"Reviewer<br/>approved? gaps? contradictions?"}
+    R -- "flagged gaps<br/>(max 2 extra rounds)" --> W1
+    R -- "approved / cap reached" --> S["Synthesizer<br/>answer + key findings + citations"]
+    S --> T["trace_summary<br/>per-agent duration, sources, review rounds"]
+
+    classDef stage fill:#6C5CE7,stroke:#4834B0,color:#fff
+    class P,W1,W2,W3,S stage
 ```
-POST /research/run  (question)
-  │
-  ▼
-PLANNER            — structured plan: 2-5 independent sub-questions
-  │
-  ▼
-WORKERS (parallel)  — each: tool-calling loop (web_search, fetch_url) → structured finding
-  │
-  ▼
-EVIDENCE POOL       — findings merged as they complete
-  │
-  ▼
-REVIEWER            — structured review: approved? gaps? contradictions? unsupported claims?
-  │
-  ├── needs more research (bounded) ──► WORKERS on the flagged gaps only ──┐
-  │                                                                        │
-  │◄───────────────────────────────────────────────────────────────────────┘
-  ▼ approved (or cap reached)
-SYNTHESIZER         — final markdown answer + key findings + citations
-  │
-  ▼
-trace_summary       — every agent's duration, sources found, review round count
-```
+
+Every arrow above is a real code path, not a simplification for the diagram:
+the Worker fan-out/fan-in is a literal `asyncio.Queue`, the Reviewer loop is
+bounded by `MAX_REVIEW_ITERATIONS = 2`, and a Worker that fails still reaches
+the Evidence Pool (as a `WorkerFinding(failed=True, ...)`) instead of taking
+the run down.
 
 - **`backend/llm.py`** — the one shared Gemini client every agent uses.
   Two entry points: `generate_structured(prompt, schema)` (a single call
