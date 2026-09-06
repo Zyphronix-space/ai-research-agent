@@ -1,5 +1,10 @@
 # ResearchOS
 
+![Python](https://img.shields.io/badge/-Python-black?style=flat-square&logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/-FastAPI-black?style=flat-square&logo=fastapi&logoColor=white)
+![Gemini](https://img.shields.io/badge/-Gemini%20API-black?style=flat-square&logo=googlegemini&logoColor=white)
+![React](https://img.shields.io/badge/-React-black?style=flat-square&logo=react&logoColor=white)
+
 **Live demo:** https://delightful-desert-0af6ccc00.7.azurestaticapps.net
 
 A multi-agent AI research workspace: ask a question, watch a **Planner**,
@@ -34,6 +39,9 @@ flowchart TD
     RG --> EP
     Rev -- "approved, or cap reached" --> W["Writer<br/>executive summary, key findings,<br/>detailed analysis, limitations, sources"]
     W --> F["Final Research Report"]
+
+    classDef stage fill:#6C5CE7,stroke:#4834B0,color:#fff
+    class P,R1,R2,R3,W stage
 ```
 
 Every box above is a real pipeline stage, not illustrative — the Planner and
