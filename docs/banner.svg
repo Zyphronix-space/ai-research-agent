@@ -1,0 +1,19 @@
+<svg width="1200" height="240" viewBox="0 0 1200 240" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="240" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0b0b14"/>
+      <stop offset="1" stop-color="#181229"/>
+    </linearGradient>
+    <filter id="blur1" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="60"/></filter>
+    <filter id="blur2" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="70"/></filter>
+    <linearGradient id="titleFade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#d9d4f0"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="1198" height="238" rx="26" fill="url(#bg)"/>
+  <circle cx="980" cy="30" r="160" fill="#6c5ce7" opacity="0.40" filter="url(#blur1)"/>
+  <circle cx="100" cy="215" r="140" fill="#9b59f6" opacity="0.22" filter="url(#blur2)"/>
+  <rect x="1" y="1" width="1198" height="238" rx="26" fill="none" stroke="rgba(255,255,255,0.10)" stroke-width="1.5"/>
+  <text x="600" y="118" text-anchor="middle" font-family="'Segoe UI', system-ui, -apple-system, Roboto, Arial, sans-serif" font-size="58" font-weight="700" fill="url(#titleFade)" letter-spacing="2">ResearchOS</text>
+  <text x="600" y="156" text-anchor="middle" font-family="'Segoe UI', system-ui, -apple-system, Roboto, Arial, sans-serif" font-size="21" font-weight="400" fill="#aca6c9">Multi-agent AI research workspace &#8226; plan &#183; research &#183; review &#183; cite</text>
+</svg>
