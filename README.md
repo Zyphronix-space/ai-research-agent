@@ -1,9 +1,14 @@
-# ResearchOS
+<p align="center"><img src="docs/banner.svg" alt="ResearchOS — Multi-agent AI research workspace" width="100%" /></p>
 
-![Python](https://img.shields.io/badge/-Python-black?style=flat-square&logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/-FastAPI-black?style=flat-square&logo=fastapi&logoColor=white)
-![Gemini](https://img.shields.io/badge/-Gemini%20API-black?style=flat-square&logo=googlegemini&logoColor=white)
-![React](https://img.shields.io/badge/-React-black?style=flat-square&logo=react&logoColor=white)
+<p align="center">
+<img src="https://img.shields.io/badge/-Python-0d0d16?style=flat-square&logo=python&logoColor=white" alt="Python" />
+<img src="https://img.shields.io/badge/-FastAPI-0d0d16?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI" />
+<img src="https://img.shields.io/badge/-Gemini%20API-0d0d16?style=flat-square&logo=googlegemini&logoColor=white" alt="Gemini" />
+<img src="https://img.shields.io/badge/-React-0d0d16?style=flat-square&logo=react&logoColor=white" alt="React" />
+<img src="https://img.shields.io/badge/-73%20tests%20passing-6C5CE7?style=flat-square" alt="73 tests passing" />
+</p>
+
+# ResearchOS
 
 **Live demo:** https://delightful-desert-0af6ccc00.7.azurestaticapps.net
 
