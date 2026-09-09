@@ -79,6 +79,15 @@ export function GlassSidebar({ open, onNavigate }) {
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.name || user.email}</span>
           </div>
         )}
+        <div style={{ display: 'flex', gap: 8, padding: '4px 10px', fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+          <NavLink to="/privacy" onClick={onNavigate}>
+            Privacy
+          </NavLink>
+          <span>·</span>
+          <NavLink to="/terms" onClick={onNavigate}>
+            Terms
+          </NavLink>
+        </div>
       </div>
     </aside>
   )

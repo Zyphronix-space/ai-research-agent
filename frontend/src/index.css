@@ -1,6 +1,6 @@
 :root {
   /* ResearchOS color identity: indigo + electric blue, white surfaces,
-     soft violet accents — deliberately not neon (soft saturation, no
+     soft violet accents - deliberately not neon (soft saturation, no
      glow/bloom effects). */
   --text: #5b5a6b;
   --text-h: #14121f;
@@ -185,4 +185,39 @@ a {
 *:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.legal-body h2 {
+  margin-top: 26px;
+  font-size: 1.05rem;
+}
+.legal-body h2:first-child {
+  margin-top: 0;
+}
+.legal-body p,
+.legal-body li {
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+.legal-body p {
+  margin: 0 0 10px;
+}
+.legal-body ul {
+  margin: 0 0 10px;
+  padding-left: 20px;
+}
+.legal-body a {
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

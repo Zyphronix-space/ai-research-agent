@@ -8,6 +8,8 @@ import { Login } from './pages/Login'
 import { Signup } from './pages/Signup'
 import { ForgotPassword } from './pages/ForgotPassword'
 import { ResetPassword } from './pages/ResetPassword'
+import { PrivacyPolicy } from './pages/PrivacyPolicy'
+import { TermsOfService } from './pages/TermsOfService'
 import { Dashboard } from './pages/Dashboard'
 import { NewResearch } from './pages/NewResearch'
 import { LiveResearch } from './pages/LiveResearch'
@@ -32,6 +34,8 @@ function App() {
               <Route path="/signup" element={<Signup />} />
               <Route path="/forgot-password" element={<ForgotPassword />} />
               <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/privacy" element={<PrivacyPolicy />} />
+              <Route path="/terms" element={<TermsOfService />} />
 
               <Route
                 element={

@@ -28,7 +28,7 @@ export function Signup() {
   }
 
   return (
-    <AuthLayout title="Create your workspace" subtitle="No verification email required — you're in right away.">
+    <AuthLayout title="Create your workspace" subtitle="No verification email required - you're in right away.">
       <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <GlassField label="Name">
           <GlassInput required autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Ada Lovelace" />
@@ -46,6 +46,10 @@ export function Signup() {
       </form>
       <p style={{ marginTop: 18, fontSize: '0.85rem', textAlign: 'center', color: 'var(--text-dim)' }}>
         Already have an account? <Link to="/login">Sign in</Link>
+      </p>
+      <p style={{ marginTop: 10, fontSize: '0.76rem', textAlign: 'center', color: 'var(--text-dim)' }}>
+        By creating an account you agree to the <Link to="/terms">Terms and Conditions</Link> and{' '}
+        <Link to="/privacy">Privacy Policy</Link>.
       </p>
     </AuthLayout>
   )

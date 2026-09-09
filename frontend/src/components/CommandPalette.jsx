@@ -78,7 +78,7 @@ export function CommandPalette({ open, onClose }) {
   if (!open) return null
   return (
     <div className="command-palette-overlay" onClick={onClose}>
-      <div className="command-palette" onClick={(e) => e.stopPropagation()}>
+      <div className="command-palette" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Command palette">
         <input
           ref={inputRef}
           className="command-palette-input"
@@ -89,11 +89,24 @@ export function CommandPalette({ open, onClose }) {
             setActiveIdx(0)
           }}
           onKeyDown={onKeyDown}
+          role="combobox"
+          aria-expanded={actions.length > 0}
+          aria-autocomplete="list"
+          aria-controls="command-palette-listbox"
+          aria-label="Type a command or search"
         />
-        <div className="command-palette-list">
+        <div className="command-palette-list" id="command-palette-listbox" role="listbox">
           {actions.length === 0 && <div className="command-palette-empty">No matching commands</div>}
           {actions.map((a, i) => (
-            <button key={a.id} type="button" className={`command-palette-item ${i === activeIdx ? 'active' : ''}`} onClick={() => runAction(a)} onMouseEnter={() => setActiveIdx(i)}>
+            <button
+              key={a.id}
+              type="button"
+              role="option"
+              aria-selected={i === activeIdx}
+              className={`command-palette-item ${i === activeIdx ? 'active' : ''}`}
+              onClick={() => runAction(a)}
+              onMouseEnter={() => setActiveIdx(i)}
+            >
               <a.icon size={16} />
               {a.label}
             </button>

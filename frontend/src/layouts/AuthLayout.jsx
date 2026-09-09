@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { LogoIcon } from '../components/icons'
 
 export function AuthLayout({ title, subtitle, children }) {
@@ -22,6 +23,11 @@ export function AuthLayout({ title, subtitle, children }) {
         {subtitle && <p style={{ color: 'var(--text-dim)', fontSize: '0.85rem', marginBottom: 18 }}>{subtitle}</p>}
         {children}
       </div>
+      <p style={{ marginTop: 16, fontSize: '0.76rem', textAlign: 'center', color: 'var(--text-dim)', position: 'relative', zIndex: 1 }}>
+        <Link to="/privacy">Privacy Policy</Link>
+        <span style={{ margin: '0 8px' }}>·</span>
+        <Link to="/terms">Terms and Conditions</Link>
+      </p>
     </div>
   )
 }
