@@ -42,7 +42,7 @@ export function ResetPassword() {
   return (
     <AuthLayout title="Choose a new password">
       {done ? (
-        <p className="glass-field-hint">Password updated — redirecting to sign in…</p>
+        <p className="glass-field-hint">Password updated - redirecting to sign in...</p>
       ) : (
         <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <GlassField label="New password" hint="At least 8 characters">

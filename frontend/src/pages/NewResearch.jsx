@@ -45,7 +45,7 @@ export function NewResearch() {
       <h1>What would you like to investigate?</h1>
       <p style={{ color: 'var(--text-dim)', marginBottom: 22 }}>
         A Planner breaks your question into sub-questions, Researchers investigate them in parallel using real tools, a
-        Reviewer checks the findings, and a Writer produces the final report — every step shown live.
+        Reviewer checks the findings, and a Writer produces the final report - every step shown live.
       </p>
 
       <GlassCard>

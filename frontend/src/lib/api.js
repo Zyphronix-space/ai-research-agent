@@ -31,7 +31,7 @@ export async function apiFetch(path, options = {}) {
   try {
     res = await fetch(`${API_URL}${path}`, { ...options, headers })
   } catch {
-    throw new ApiError('Network error — check your connection and try again.', 0)
+    throw new ApiError('Network error - check your connection and try again.', 0)
   }
 
   if (!res.ok) {
@@ -111,7 +111,7 @@ export const agentsApi = {
 }
 
 /** Streams POST /research/run's newline-delimited JSON events, calling
- * onEvent for each one as it arrives. Not a JSON call — the response body
+ * onEvent for each one as it arrives. Not a JSON call - the response body
  * is a live stream, so this reads it directly rather than going through
  * apiFetch. Throws ApiError on a non-2xx response before any streaming
  * starts (bad request / server misconfigured), same shape as every other
@@ -143,7 +143,7 @@ async function _stream(url, init, { onEvent, signal, onHeaders }) {
     })
   } catch (err) {
     if (err.name === 'AbortError') throw err
-    throw new ApiError('Network error — check your connection and try again.', 0)
+    throw new ApiError('Network error - check your connection and try again.', 0)
   }
 
   if (!res.ok) {

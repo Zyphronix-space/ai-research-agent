@@ -1,4 +1,4 @@
-/* A small, self-contained SVG icon set — no icon library dependency.
+/* A small, self-contained SVG icon set - no icon library dependency.
  * Every icon accepts `size` (shorthand for width+height) plus any other
  * svg prop (className, style, etc.). */
 

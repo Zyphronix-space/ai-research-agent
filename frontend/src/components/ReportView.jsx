@@ -35,7 +35,7 @@ export function ReportView({ run, sources, onToggleSaved, onRegenerate, onFollow
       setCopied(true)
       setTimeout(() => setCopied(false), 1800)
     } catch {
-      pushToast({ type: 'error', message: 'Could not copy to clipboard — your browser may have blocked it.' })
+      pushToast({ type: 'error', message: 'Could not copy to clipboard - your browser may have blocked it.' })
     }
   }
 

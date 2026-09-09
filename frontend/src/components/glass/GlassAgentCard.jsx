@@ -30,7 +30,7 @@ export function GlassAgentCard({ agent }) {
           agent.recent_runs.map((r, i) => (
             <div key={i} className="glass-agent-recent-row">
               <span title={r.question}>{r.question}</span>
-              <span>{r.duration_ms != null ? `${(r.duration_ms / 1000).toFixed(1)}s` : '—'}</span>
+              <span>{r.duration_ms != null ? `${(r.duration_ms / 1000).toFixed(1)}s` : 'n/a'}</span>
             </div>
           ))
         ) : (

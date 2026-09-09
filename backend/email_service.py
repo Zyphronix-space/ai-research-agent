@@ -1,4 +1,4 @@
-"""Password-reset email delivery via Resend's HTTP API — a plain POST, no
+"""Password-reset email delivery via Resend's HTTP API - a plain POST, no
 SDK dependency (this project already depends on `requests`). Deliberately
 fails loudly (EmailError) instead of silently no-op'ing when RESEND_API_KEY
 isn't set, per this project's "never silently fail" error-handling rule.

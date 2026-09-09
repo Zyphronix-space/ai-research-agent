@@ -14,7 +14,7 @@ export function Agents() {
     <div>
       <h1>Agents</h1>
       <p style={{ color: 'var(--text-dim)', marginBottom: 18 }}>
-        The five agents behind every research run — what each one does, whether the pipeline is configured, and its
+        The five agents behind every research run - what each one does, whether the pipeline is configured, and its
         most recent activity from your own research history.
       </p>
 

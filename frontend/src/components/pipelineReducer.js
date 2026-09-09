@@ -1,8 +1,8 @@
 /** Folds one pipeline event into the live pipeline state the UI renders:
  * a `rows` list for GlassTimeline (Planner / Researcher N / Tool Agent /
  * Reviewer / Writer, ○/●/✓/✕) and an `activity` list for GlassActivityLog
- * (timestamped, safe-only lines — agent, task, status, tool, query, result
- * summary, timestamp, error — never the model's raw reasoning, which this
+ * (timestamped, safe-only lines - agent, task, status, tool, query, result
+ * summary, timestamp, error - never the model's raw reasoning, which this
  * app never receives from the backend in the first place).
  *
  * The Tool Agent row is synthetic: the backend's researchers call tools
@@ -63,7 +63,7 @@ export function applyPipelineEvent(state, event) {
     case 'plan_done': {
       rows = upsertRow(rows, 'planner', {
         status: 'done',
-        detail: `Plan created — ${event.sub_questions.length} sub-question${event.sub_questions.length === 1 ? '' : 's'}`,
+        detail: `Plan created - ${event.sub_questions.length} sub-question${event.sub_questions.length === 1 ? '' : 's'}`,
       })
       event.sub_questions.forEach((sq, i) => {
         const id = `researcher_${String(i + 1).padStart(2, '0')}`
@@ -80,7 +80,7 @@ export function applyPipelineEvent(state, event) {
       if (!rows.some((r) => r.id === 'writer')) {
         rows = [...rows, { id: 'writer', kind: 'writer', label: 'WRITER', status: 'waiting', detail: 'Waiting' }]
       }
-      next = log({ ...next, rows }, 'Planner', `Plan created — ${event.sub_questions.length} sub-question(s)`)
+      next = log({ ...next, rows }, 'Planner', `Plan created - ${event.sub_questions.length} sub-question(s)`)
       break
     }
 
@@ -120,7 +120,7 @@ export function applyPipelineEvent(state, event) {
       const activeResearchers = Math.max(0, next.activeResearchers - 1)
       rows = upsertRow(rows, event.researcher, {
         status: event.finding.failed ? 'failed' : 'done',
-        detail: event.finding.failed ? 'Failed — continuing with partial results' : `${event.finding.sources.length} source${event.finding.sources.length === 1 ? '' : 's'} collected`,
+        detail: event.finding.failed ? 'Failed - continuing with partial results' : `${event.finding.sources.length} source${event.finding.sources.length === 1 ? '' : 's'} collected`,
         finding: event.finding,
       })
       const withActive = { ...next, activeResearchers, rows }
@@ -131,7 +131,7 @@ export function applyPipelineEvent(state, event) {
       next = log(
         { ...withActive, rows },
         `Researcher ${event.researcher.replace('researcher_', '')}`,
-        event.finding.failed ? 'Failed — continuing with partial results' : `${event.finding.sources.length} source(s) collected`,
+        event.finding.failed ? 'Failed - continuing with partial results' : `${event.finding.sources.length} source(s) collected`,
         event.finding.failed
       )
       break
@@ -153,7 +153,7 @@ export function applyPipelineEvent(state, event) {
 
     case 'iteration_start':
       rows = upsertRow(rows, 'reviewer', { status: 'waiting', detail: `Round ${event.iteration} pending…` })
-      next = log({ ...next, rows }, 'Reviewer', `Round ${event.iteration} — researching: ${event.topics.join(', ')}`)
+      next = log({ ...next, rows }, 'Reviewer', `Round ${event.iteration} - researching: ${event.topics.join(', ')}`)
       break
 
     case 'writing_start':
@@ -162,8 +162,8 @@ export function applyPipelineEvent(state, event) {
       break
 
     case 'writing_done':
-      rows = upsertRow(rows, 'writer', { status: 'done', detail: event.skipped ? 'Skipped — compiled raw findings' : 'Report complete' })
-      next = log({ ...next, rows }, 'Writer', event.skipped ? 'Writer disabled — compiled raw findings instead' : 'Final report complete')
+      rows = upsertRow(rows, 'writer', { status: 'done', detail: event.skipped ? 'Skipped - compiled raw findings' : 'Report complete' })
+      next = log({ ...next, rows }, 'Writer', event.skipped ? 'Writer disabled - compiled raw findings instead' : 'Final report complete')
       break
 
     case 'error':
@@ -193,7 +193,7 @@ export function pipelineRowsFromTrace(trace) {
         label: `RESEARCHER ${entry.name.replace('researcher_', '')}`,
         topic: entry.topic,
         status: entry.failed ? 'failed' : 'done',
-        detail: entry.failed ? 'Failed — continuing with partial results' : `${entry.sources_found ?? 0} sources collected`,
+        detail: entry.failed ? 'Failed - continuing with partial results' : `${entry.sources_found ?? 0} sources collected`,
         finding,
       })
     } else if (entry.name.startsWith('reviewer')) {

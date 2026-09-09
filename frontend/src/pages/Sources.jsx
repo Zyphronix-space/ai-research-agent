@@ -32,7 +32,7 @@ export function Sources() {
   return (
     <div>
       <h1>Sources</h1>
-      <p style={{ color: 'var(--text-dim)', marginBottom: 18 }}>Every source your researchers actually collected — real title, domain, and relevance, never invented.</p>
+      <p style={{ color: 'var(--text-dim)', marginBottom: 18 }}>Every source your researchers actually collected - real title, domain, and relevance, never invented.</p>
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 18, alignItems: 'center' }}>
         <GlassSelect value={relevance} onChange={(e) => setRelevance(e.target.value)} style={{ width: 160 }}>

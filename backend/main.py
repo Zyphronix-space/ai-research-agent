@@ -7,8 +7,8 @@ Researchers if the Reviewer flags real gaps -> Writer) and streams every
 step as a newline-delimited JSON event so the frontend can render a live
 pipeline instead of a single opaque wait.
 
-Everything else — projects, sources, dashboard metrics, agent status,
-profile/security — is ordinary per-user CRUD in front of db.py. Sign-in
+Everything else - projects, sources, dashboard metrics, agent status,
+profile/security - is ordinary per-user CRUD in front of db.py. Sign-in
 (Google or email/password) is required for all of it: research data is
 scoped strictly to the requesting user, and every lookup below re-checks
 ownership rather than trusting a client-supplied id.
@@ -437,7 +437,7 @@ async def research(req: ResearchRequest, request: Request, authorization: str | 
     agent_config = {"planner": True, "researcher": True, "reviewer": True, "writer": True, **req.agent_config}
     for required in REQUIRED_AGENTS:
         if not agent_config.get(required, True):
-            raise HTTPException(status_code=422, detail=f"'{required}' cannot be disabled — there is no research pipeline without it.")
+            raise HTTPException(status_code=422, detail=f"'{required}' cannot be disabled - there is no research pipeline without it.")
 
     user = auth.get_current_user(authorization)
     if user is not None:
@@ -477,7 +477,7 @@ async def research(req: ResearchRequest, request: Request, authorization: str | 
 @app.post("/research/{run_id}/restart")
 async def restart_research(run_id: str, request: Request, authorization: str | None = Header(default=None)):
     """Reruns the full pipeline for a run's original question/config under
-    a brand-new run id — a real "Restart research" control."""
+    a brand-new run id - a real "Restart research" control."""
     user = auth.get_current_user(authorization)
     if user is None:
         raise HTTPException(status_code=401, detail="Sign in required")
@@ -495,6 +495,6 @@ async def restart_research(run_id: str, request: Request, authorization: str | N
     )
     response = await research(req, request, authorization)
     # The frontend needs the new run's id to navigate there once streaming
-    # starts — it can't infer it from the (id-agnostic) event stream itself.
+    # starts - it can't infer it from the (id-agnostic) event stream itself.
     response.headers["X-Run-Id"] = new_run_id
     return response

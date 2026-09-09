@@ -41,7 +41,7 @@ export function AuthProvider({ children }) {
     try {
       await authApi.logout()
     } catch {
-      // best-effort — the token is being discarded client-side regardless
+      // best-effort - the token is being discarded client-side regardless
     }
     setToken(null)
     setUser(null)

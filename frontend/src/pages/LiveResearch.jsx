@@ -140,8 +140,8 @@ export function LiveResearch() {
         setRun(detail)
         loadSources(newId)
         // Navigating only now (after the stream has already finished) means
-        // the id-keyed effect's cleanup — which aborts controllerRef.current
-        // on the way out — cancels an already-settled request, not this one.
+        // the id-keyed effect's cleanup - which aborts controllerRef.current
+        // on the way out - cancels an already-settled request, not this one.
         navigate(`/research/${newId}`, { replace: true, state: { skipInitialLoad: true } })
       }
     } catch (err) {

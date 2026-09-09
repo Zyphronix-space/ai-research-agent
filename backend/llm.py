@@ -74,7 +74,7 @@ async def _call_with_retry(fn: Callable[[], "types.GenerateContentResponse"]):
                 await asyncio.sleep(min(2**attempt, 30))
                 continue
             if exc.code == 429:
-                raise LLMError("Hit the Gemini free-tier rate limit — try again shortly.") from exc
+                raise LLMError("Hit the Gemini free-tier rate limit - try again shortly.") from exc
             raise LLMError(f"Gemini API error: {exc}") from exc
 
 
